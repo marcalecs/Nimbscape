@@ -1,0 +1,140 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <!-- macOS Squircle Drop Shadow -->
+    <filter id="outerShadow" x="-12%" y="-10%" width="124%" height="126%">
+      <feDropShadow dx="0" dy="22" stdDeviation="28" flood-color="#000000" flood-opacity="0.52"/>
+    </filter>
+
+    <!-- Soft Ambient Glows -->
+    <filter id="softBlur" x="-35%" y="-35%" width="170%" height="170%">
+      <feGaussianBlur stdDeviation="48"/>
+    </filter>
+    <filter id="ribbonBlur" x="-25%" y="-25%" width="150%" height="150%">
+      <feGaussianBlur stdDeviation="16"/>
+    </filter>
+    <filter id="waveShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="14" stdDeviation="18" flood-color="#040410" flood-opacity="0.45"/>
+    </filter>
+
+    <!-- Obsidian Dark Glass Squircle Base -->
+    <linearGradient id="obsidianBase" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#22222A"/>
+      <stop offset="48%" stop-color="#111116"/>
+      <stop offset="100%" stop-color="#07070A"/>
+    </linearGradient>
+
+    <!-- Top Specular Rim Light -->
+    <linearGradient id="rimStroke" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.34"/>
+      <stop offset="30%" stop-color="#FFFFFF" stop-opacity="0.10"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0.06"/>
+    </linearGradient>
+
+    <!-- Deep Midnight Canvas Backdrop -->
+    <linearGradient id="portalBg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#09071A"/>
+      <stop offset="50%" stop-color="#150E36"/>
+      <stop offset="100%" stop-color="#061726"/>
+    </linearGradient>
+
+    <!-- Sculptural Flowing Silk Wave Gradients (Living Wallpaper Motif) -->
+    <linearGradient id="waveBack" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#8B5CF6" stop-opacity="0.92"/>
+      <stop offset="55%" stop-color="#EC4899" stop-opacity="0.86"/>
+      <stop offset="100%" stop-color="#38BDF8" stop-opacity="0.72"/>
+    </linearGradient>
+
+    <linearGradient id="waveMid" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0%" stop-color="#2563EB" stop-opacity="0.92"/>
+      <stop offset="50%" stop-color="#7C3AED" stop-opacity="0.82"/>
+      <stop offset="100%" stop-color="#06B6D4" stop-opacity="0.90"/>
+    </linearGradient>
+
+    <linearGradient id="waveFront" x1="0" y1="0.2" x2="1" y2="0.8">
+      <stop offset="0%" stop-color="#38BDF8" stop-opacity="0.88"/>
+      <stop offset="52%" stop-color="#818CF8" stop-opacity="0.78"/>
+      <stop offset="100%" stop-color="#F472B6" stop-opacity="0.84"/>
+    </linearGradient>
+
+    <linearGradient id="crestHighlight" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.0"/>
+      <stop offset="35%" stop-color="#FFFFFF" stop-opacity="0.62"/>
+      <stop offset="70%" stop-color="#E0F2FE" stop-opacity="0.48"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0.0"/>
+    </linearGradient>
+
+    <!-- Liquid Glass Specular Sheen -->
+    <linearGradient id="glassSheen" x1="0" y1="0" x2="0.8" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.24"/>
+      <stop offset="38%" stop-color="#FFFFFF" stop-opacity="0.05"/>
+      <stop offset="54%" stop-color="#FFFFFF" stop-opacity="0.0"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0.08"/>
+    </linearGradient>
+
+    <!-- Clip Paths -->
+    <clipPath id="squircleClip">
+      <rect x="100" y="100" width="824" height="824" rx="185" ry="185"/>
+    </clipPath>
+    <clipPath id="portalClip">
+      <rect x="168" y="220" width="688" height="524" rx="76" ry="76"/>
+    </clipPath>
+  </defs>
+
+  <!-- Main macOS Squircle Container -->
+  <g filter="url(#outerShadow)">
+    <rect x="100" y="100" width="824" height="824" rx="185" ry="185" fill="url(#obsidianBase)"/>
+  </g>
+
+  <g clip-path="url(#squircleClip)">
+    <!-- Subtle Internal Ambient Aura -->
+    <ellipse cx="340" cy="400" rx="290" ry="220" fill="#7C3AED" opacity="0.22" filter="url(#softBlur)"/>
+    <ellipse cx="690" cy="590" rx="270" ry="215" fill="#06B6D4" opacity="0.22" filter="url(#softBlur)"/>
+
+    <!-- Stacked Translucent Depth Card Behind Main Display -->
+    <rect x="228" y="172" width="568" height="440" rx="64" fill="#FFFFFF" opacity="0.07" stroke="#FFFFFF" stroke-opacity="0.15" stroke-width="2"/>
+
+    <!-- Living Wallpaper Glass Portal -->
+    <g clip-path="url(#portalClip)">
+      <rect x="168" y="220" width="688" height="524" fill="url(#portalBg)"/>
+
+      <!-- Deep Ambient Color Mesh -->
+      <ellipse cx="290" cy="340" rx="280" ry="200" fill="#6D28D9" opacity="0.72" filter="url(#softBlur)"/>
+      <ellipse cx="720" cy="310" rx="240" ry="180" fill="#DB2777" opacity="0.65" filter="url(#softBlur)"/>
+      <ellipse cx="670" cy="640" rx="290" ry="210" fill="#0891B2" opacity="0.76" filter="url(#softBlur)"/>
+
+      <!-- Flowing Sculptural Glass-Silk Waves (Opposing Interwoven Directions) -->
+      <!-- Wave 1 (Back): High on left -> sweeps down toward right -->
+      <g filter="url(#waveShadow)">
+        <path d="M 110 340 C 260 280, 410 475, 585 495 C 715 510, 815 435, 910 475 L 910 790 L 110 790 Z" fill="url(#waveBack)" opacity="0.78"/>
+      </g>
+
+      <!-- Wave 2 (Mid): Rises from left-low -> arches left-of-center -> drops right -->
+      <g filter="url(#waveShadow)">
+        <path d="M 110 595 C 245 450, 355 375, 505 460 C 655 545, 765 625, 910 545 L 910 790 L 110 790 Z" fill="url(#waveMid)" opacity="0.82"/>
+      </g>
+
+      <!-- Wave 3 (Front): Low on left -> sweeps upward to luminous crest on right -->
+      <g filter="url(#waveShadow)">
+        <path d="M 110 645 C 265 690, 435 580, 610 475 C 725 405, 820 420, 910 465 L 910 790 L 110 790 Z" fill="url(#waveFront)" opacity="0.80"/>
+      </g>
+
+      <!-- Crisp Luminous Specular Wave Crests (Opposing Curves) -->
+      <path d="M 130 336 C 265 282, 412 474, 585 494 C 715 509, 814 436, 895 470" fill="none" stroke="url(#crestHighlight)" stroke-width="4.5" stroke-linecap="round"/>
+      <path d="M 130 582 C 250 448, 358 376, 505 459 C 654 544, 765 622, 896 550" fill="none" stroke="url(#crestHighlight)" stroke-width="4.5" stroke-linecap="round"/>
+      <path d="M 130 648 C 270 688, 438 578, 610 474 C 724 405, 818 420, 896 460" fill="none" stroke="url(#crestHighlight)" stroke-width="5" stroke-linecap="round"/>
+
+      <!-- Liquid Glass Refraction Sheen -->
+      <rect x="168" y="220" width="688" height="524" fill="url(#glassSheen)"/>
+    </g>
+
+    <!-- Crisp Glass Portal Border -->
+    <rect x="168" y="220" width="688" height="524" rx="76" fill="none" stroke="#FFFFFF" stroke-opacity="0.32" stroke-width="3"/>
+
+    <!-- Minimal Display Base Foot -->
+    <rect x="424" y="790" width="176" height="22" rx="11" fill="#FFFFFF" opacity="0.18"/>
+    <rect x="444" y="795" width="136" height="4" rx="2" fill="#FFFFFF" opacity="0.28"/>
+  </g>
+
+  <!-- Outer Specular Glass Border -->
+  <rect x="101.5" y="101.5" width="821" height="821" rx="183.5" ry="183.5" fill="none" stroke="url(#rimStroke)" stroke-width="3"/>
+</svg>

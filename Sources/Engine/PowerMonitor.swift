@@ -1,0 +1,490 @@
+import Cocoa
+import Combine
+import IOKit.ps
+
+public struct PowerPolicyState: Equatable, Sendable {
+    public var shouldPause: Bool
+    public var shouldStopAndFreeRAM: Bool
+    public var shouldMuteAudio: Bool
+    public var isHardwareSleepOrLock: Bool
+    public var pauseReason: String?
+
+    public static let running = PowerPolicyState(
+        shouldPause: false,
+        shouldStopAndFreeRAM: false,
+        shouldMuteAudio: false,
+        isHardwareSleepOrLock: false,
+        pauseReason: nil
+    )
+}
+
+@MainActor
+public protocol PowerMonitorDelegate: AnyObject {
+    func powerMonitorDidUpdatePolicy(_ state: PowerPolicyState)
+    func powerMonitorDidUnlockOrWake()
+}
+
+@MainActor
+public class PowerMonitor: ObservableObject {
+    public static let shared = PowerMonitor()
+
+    public weak var delegate: PowerMonitorDelegate?
+
+    @Published public private(set) var powerPauseReason: String? = nil
+    @Published public var overrideSystemPause: Bool = false {
+        didSet {
+            evaluateState()
+        }
+    }
+    @Published public private(set) var isOnBattery: Bool = false
+    @Published public private(set) var batteryLevel: Int? = nil
+    @Published public private(set) var isLowPowerMode: Bool = false
+    @Published public private(set) var isSystemPaused: Bool = false
+    @Published public private(set) var isStoppedToFreeRAM: Bool = false
+    @Published public private(set) var isRuleMuted: Bool = false
+    @Published public private(set) var activeRuleMatch: AppRuleEvaluation? = nil
+
+    private var isSystemSleeping: Bool = false
+    private var isScreenSleeping: Bool = false
+    private var isScreenLocked: Bool = false
+    private var lastPolicy: PowerPolicyState = .running
+    private var checkTimer: Timer?
+    private var timerTickCount: Int = 0
+    private var cancellables = Set<AnyCancellable>()
+
+    private init() {
+        refreshBatteryTelemetry()
+        isLowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
+        setupNotifications()
+        setupBindings()
+        startPeriodicChecks()
+    }
+
+    private func setupNotifications() {
+        let workspaceCenter = NSWorkspace.shared.notificationCenter
+
+        workspaceCenter.addObserver(self, selector: #selector(handleWillSleep), name: NSWorkspace.willSleepNotification, object: nil)
+        workspaceCenter.addObserver(self, selector: #selector(handleDidWake), name: NSWorkspace.didWakeNotification, object: nil)
+        workspaceCenter.addObserver(self, selector: #selector(handleScreensDidSleep), name: NSWorkspace.screensDidSleepNotification, object: nil)
+        workspaceCenter.addObserver(self, selector: #selector(handleScreensDidWake), name: NSWorkspace.screensDidWakeNotification, object: nil)
+        workspaceCenter.addObserver(self, selector: #selector(handleSessionResign), name: NSWorkspace.sessionDidResignActiveNotification, object: nil)
+        workspaceCenter.addObserver(self, selector: #selector(handleSessionActive), name: NSWorkspace.sessionDidBecomeActiveNotification, object: nil)
+
+        workspaceCenter.addObserver(self, selector: #selector(handleWorkspaceAppChange), name: NSWorkspace.didActivateApplicationNotification, object: nil)
+        workspaceCenter.addObserver(self, selector: #selector(handleWorkspaceAppChange), name: NSWorkspace.didDeactivateApplicationNotification, object: nil)
+        workspaceCenter.addObserver(self, selector: #selector(handleWorkspaceAppChange), name: NSWorkspace.didHideApplicationNotification, object: nil)
+        workspaceCenter.addObserver(self, selector: #selector(handleWorkspaceAppChange), name: NSWorkspace.didUnhideApplicationNotification, object: nil)
+        workspaceCenter.addObserver(self, selector: #selector(handleWorkspaceAppChange), name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
+        workspaceCenter.addObserver(self, selector: #selector(handleWorkspaceAppChange), name: NSWorkspace.didLaunchApplicationNotification, object: nil)
+        workspaceCenter.addObserver(self, selector: #selector(handleWorkspaceAppChange), name: NSWorkspace.didTerminateApplicationNotification, object: nil)
+
+        let nc = NotificationCenter.default
+        nc.addObserver(self, selector: #selector(handleWorkspaceAppChange), name: NSWindow.didMiniaturizeNotification, object: nil)
+        nc.addObserver(self, selector: #selector(handleWorkspaceAppChange), name: NSWindow.didDeminiaturizeNotification, object: nil)
+        nc.addObserver(self, selector: #selector(handleWorkspaceAppChange), name: NSWindow.didResizeNotification, object: nil)
+        nc.addObserver(self, selector: #selector(handleWorkspaceAppChange), name: NSWindow.willCloseNotification, object: nil)
+
+        let distributedCenter = DistributedNotificationCenter.default()
+        distributedCenter.addObserver(self, selector: #selector(handleScreenLocked), name: Notification.Name("com.apple.screenIsLocked"), object: nil)
+        distributedCenter.addObserver(self, selector: #selector(handleScreenUnlocked), name: Notification.Name("com.apple.screenIsUnlocked"), object: nil)
+
+        nc.addObserver(
+            self,
+            selector: #selector(handlePowerStateDidChange),
+            name: Notification.Name.NSProcessInfoPowerStateDidChange,
+            object: nil
+        )
+    }
+
+    private func setupBindings() {
+        AppRulesStore.shared.$rules
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.evaluateState() }
+            .store(in: &cancellables)
+
+        let preferences = AppPreferences.shared
+        Publishers.CombineLatest4(
+            preferences.$pauseOnBattery,
+            preferences.$pauseOnLowPowerMode,
+            preferences.$pauseOnFullscreen,
+            preferences.$pauseOnMaximized
+        )
+        .receive(on: DispatchQueue.main)
+        .sink { [weak self] _, _, _, _ in self?.evaluateState() }
+        .store(in: &cancellables)
+
+        preferences.$windowPauseMode
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.evaluateState() }
+            .store(in: &cancellables)
+    }
+
+    private func startPeriodicChecks() {
+        let timer = Timer.scheduledTimer(withTimeInterval: 0.6, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.timerTickCount += 1
+                if self.timerTickCount % 8 == 0 {
+                    self.refreshBatteryTelemetry()
+                }
+                self.evaluateState()
+            }
+        }
+        timer.tolerance = 0.2
+        checkTimer = timer
+    }
+
+    @objc private func handleWillSleep() {
+        isSystemSleeping = true
+        evaluateState()
+    }
+
+    @objc private func handleDidWake() {
+        isSystemSleeping = false
+        isScreenSleeping = false
+        refreshBatteryTelemetry()
+        evaluateState()
+        delegate?.powerMonitorDidUnlockOrWake()
+    }
+
+    @objc private func handleScreensDidSleep() {
+        isScreenSleeping = true
+        evaluateState()
+    }
+
+    @objc private func handleScreensDidWake() {
+        isScreenSleeping = false
+        refreshBatteryTelemetry()
+        evaluateState()
+        delegate?.powerMonitorDidUnlockOrWake()
+    }
+
+    @objc private func handleScreenLocked() {
+        isScreenLocked = true
+        evaluateState()
+    }
+
+    @objc private func handleScreenUnlocked() {
+        isScreenLocked = false
+        isScreenSleeping = false
+        isSystemSleeping = false
+        refreshBatteryTelemetry()
+        evaluateState()
+        delegate?.powerMonitorDidUnlockOrWake()
+    }
+
+    @objc private func handleSessionResign() {
+        isScreenLocked = true
+        evaluateState()
+    }
+
+    @objc private func handleSessionActive() {
+        isScreenLocked = false
+        refreshBatteryTelemetry()
+        evaluateState()
+        delegate?.powerMonitorDidUnlockOrWake()
+    }
+
+    @objc private func handleWorkspaceAppChange() {
+        evaluateState()
+    }
+
+    @objc private func handlePowerStateDidChange() {
+        DispatchQueue.main.async {
+            self.isLowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
+            self.refreshBatteryTelemetry()
+            self.evaluateState()
+        }
+    }
+
+    public func refreshBatteryTelemetry() {
+        var onBattery = false
+        var level: Int? = nil
+
+        if let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
+           let sources = IOPSCopyPowerSourcesList(info)?.takeRetainedValue() as? [CFTypeRef] {
+            for ps in sources {
+                guard let desc = IOPSGetPowerSourceDescription(info, ps)?.takeUnretainedValue() as? [String: Any] else {
+                    continue
+                }
+                if let state = desc[kIOPSPowerSourceStateKey as String] as? String {
+                    if state == (kIOPSBatteryPowerValue as String) {
+                        onBattery = true
+                    }
+                }
+                if let cap = desc[kIOPSCurrentCapacityKey as String] as? Int {
+                    level = cap
+                }
+            }
+        }
+
+        let lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
+        if self.isOnBattery != onBattery { self.isOnBattery = onBattery }
+        if self.batteryLevel != level { self.batteryLevel = level }
+        if self.isLowPowerMode != lowPower { self.isLowPowerMode = lowPower }
+    }
+
+    private func inspectOnScreenWindows() -> (
+        fullscreenBundleIDs: Set<String>,
+        hasMaximizedCoveringDesktop: Bool,
+        hasAnyOpenWindow: Bool,
+        openWindowOwnerName: String?
+    ) {
+        let ownBundleID = Bundle.main.bundleIdentifier
+        let ignoredSystemBundles: Set<String> = [
+            "com.apple.dock",
+            "com.apple.WindowManager",
+            "com.apple.WindowServer",
+            "com.apple.wallpaper.agent",
+            "com.apple.loginwindow",
+            "com.apple.controlcenter",
+            "com.apple.controlstrip",
+            "com.apple.notificationcenterui",
+            "com.apple.Spotlight",
+            "com.apple.systemuiserver",
+            "com.apple.TextInputMenuAgent",
+            "com.apple.screencaptureui",
+            "com.apple.CoreServicesUIAgent"
+        ]
+
+        let runningApps = NSWorkspace.shared.runningApplications
+        var bundleByPID: [pid_t: String] = [:]
+        for app in runningApps {
+            if let bundleIdentifier = app.bundleIdentifier {
+                bundleByPID[app.processIdentifier] = bundleIdentifier
+            }
+        }
+
+        let screens = NSScreen.screens
+        var fullscreenBundleIDs = Set<String>()
+        var hasMaximized = false
+        var hasAnyOpenWindow = false
+        var firstWindowOwner: String? = nil
+
+        guard let windowList = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else {
+            return (fullscreenBundleIDs, false, false, nil)
+        }
+
+        for info in windowList {
+            let layer = (info[kCGWindowLayer as String] as? Int) ?? 0
+            guard layer == 0 else { continue }
+
+            let alpha = (info[kCGWindowAlpha as String] as? Double) ?? 1.0
+            guard alpha > 0.05 else { continue }
+
+            guard let pid = info[kCGWindowOwnerPID as String] as? pid_t,
+                  let bundleID = bundleByPID[pid] else { continue }
+
+            if ignoredSystemBundles.contains(bundleID) {
+                continue
+            }
+
+            guard let boundsDict = info[kCGWindowBounds as String] as? [String: Any],
+                  let bounds = CGRect(dictionaryRepresentation: boundsDict as CFDictionary) else { continue }
+
+            guard bounds.width > 200 && bounds.height > 200 else { continue }
+
+            if bundleID == "com.apple.finder" {
+                let winName = (info[kCGWindowName as String] as? String) ?? ""
+                if winName.isEmpty, screens.contains(where: { abs(bounds.width - $0.frame.width) <= 4 && abs(bounds.height - $0.frame.height) <= 4 }) {
+                    continue
+                }
+            }
+
+            let ownerName = (info[kCGWindowOwnerName as String] as? String) ?? bundleID
+            var windowIsMaximized = false
+
+            for screen in screens {
+                if abs(bounds.width - screen.frame.width) <= 6 && abs(bounds.height - screen.frame.height) <= 6 {
+                    fullscreenBundleIDs.insert(bundleID)
+                    windowIsMaximized = true
+                }
+
+                let visibleArea = max(1, screen.visibleFrame.width * screen.visibleFrame.height)
+                let winArea = bounds.width * bounds.height
+                if winArea / visibleArea >= 0.75 {
+                    hasMaximized = true
+                    windowIsMaximized = true
+                }
+            }
+
+            if bundleID != ownBundleID || windowIsMaximized {
+                hasAnyOpenWindow = true
+                if firstWindowOwner == nil {
+                    firstWindowOwner = ownerName
+                }
+            }
+        }
+
+        return (fullscreenBundleIDs, hasMaximized, hasAnyOpenWindow, firstWindowOwner)
+    }
+
+    public func evaluateState() {
+        let preferences = AppPreferences.shared
+
+        if isSystemSleeping || isScreenSleeping || isScreenLocked {
+            let reason = isScreenLocked ? "Screen Locked" : (isSystemSleeping ? "System Sleep" : "Display Sleep")
+            applyPolicy(
+                PowerPolicyState(
+                    shouldPause: true,
+                    shouldStopAndFreeRAM: false,
+                    shouldMuteAudio: false,
+                    isHardwareSleepOrLock: true,
+                    pauseReason: reason
+                ),
+                ruleMatch: nil
+            )
+            return
+        }
+
+        let frontmostBundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+        let runningBundleIDs = Set(NSWorkspace.shared.runningApplications.compactMap { $0.bundleIdentifier })
+        let windowScan = inspectOnScreenWindows()
+
+        let ruleEval = AppRulesStore.shared.evaluate(
+            frontmostBundleID: frontmostBundleID,
+            runningBundleIDs: runningBundleIDs,
+            fullscreenBundleIDs: windowScan.fullscreenBundleIDs
+        )
+
+        if let eval = ruleEval {
+            switch eval.action {
+            case .stopAndFreeRAM:
+                applyPolicy(
+                    PowerPolicyState(
+                        shouldPause: true,
+                        shouldStopAndFreeRAM: true,
+                        shouldMuteAudio: false,
+                        isHardwareSleepOrLock: false,
+                        pauseReason: "\(eval.matchedRule.appName) Rule"
+                    ),
+                    ruleMatch: eval
+                )
+                return
+            case .pause:
+                applyPolicy(
+                    PowerPolicyState(
+                        shouldPause: true,
+                        shouldStopAndFreeRAM: false,
+                        shouldMuteAudio: false,
+                        isHardwareSleepOrLock: false,
+                        pauseReason: "\(eval.matchedRule.appName) Rule"
+                    ),
+                    ruleMatch: eval
+                )
+                return
+            case .muteAudio:
+                break
+            case .keepRunning:
+                applyPolicy(.running, ruleMatch: eval)
+                return
+            }
+        }
+
+        let ruleMutesAudio = (ruleEval?.action == .muteAudio)
+
+        switch preferences.windowPauseMode {
+        case .anyWindow:
+            if windowScan.hasAnyOpenWindow || !windowScan.fullscreenBundleIDs.isEmpty {
+                let label = windowScan.openWindowOwnerName.map { "\($0) Open" } ?? "Window Open"
+                applyPolicy(
+                    PowerPolicyState(
+                        shouldPause: true,
+                        shouldStopAndFreeRAM: false,
+                        shouldMuteAudio: ruleMutesAudio,
+                        isHardwareSleepOrLock: false,
+                        pauseReason: label
+                    ),
+                    ruleMatch: ruleEval
+                )
+                return
+            }
+        case .maximizedOrFullscreen:
+            if !windowScan.fullscreenBundleIDs.isEmpty || windowScan.hasMaximizedCoveringDesktop {
+                let label = !windowScan.fullscreenBundleIDs.isEmpty ? "Fullscreen App" : "Maximized Window"
+                applyPolicy(
+                    PowerPolicyState(
+                        shouldPause: true,
+                        shouldStopAndFreeRAM: false,
+                        shouldMuteAudio: ruleMutesAudio,
+                        isHardwareSleepOrLock: false,
+                        pauseReason: label
+                    ),
+                    ruleMatch: ruleEval
+                )
+                return
+            }
+        case .fullscreenOnly:
+            if !windowScan.fullscreenBundleIDs.isEmpty {
+                applyPolicy(
+                    PowerPolicyState(
+                        shouldPause: true,
+                        shouldStopAndFreeRAM: false,
+                        shouldMuteAudio: ruleMutesAudio,
+                        isHardwareSleepOrLock: false,
+                        pauseReason: "Fullscreen App"
+                    ),
+                    ruleMatch: ruleEval
+                )
+                return
+            }
+        case .never:
+            break
+        }
+
+        if !overrideSystemPause {
+            if preferences.pauseOnLowPowerMode && isLowPowerMode {
+                applyPolicy(
+                    PowerPolicyState(
+                        shouldPause: true,
+                        shouldStopAndFreeRAM: false,
+                        shouldMuteAudio: ruleMutesAudio,
+                        isHardwareSleepOrLock: false,
+                        pauseReason: "Low Power Mode"
+                    ),
+                    ruleMatch: ruleEval
+                )
+                return
+            }
+
+            if preferences.pauseOnBattery && isOnBattery {
+                applyPolicy(
+                    PowerPolicyState(
+                        shouldPause: true,
+                        shouldStopAndFreeRAM: false,
+                        shouldMuteAudio: ruleMutesAudio,
+                        isHardwareSleepOrLock: false,
+                        pauseReason: "Battery Mode"
+                    ),
+                    ruleMatch: ruleEval
+                )
+                return
+            }
+        }
+
+        applyPolicy(
+            PowerPolicyState(
+                shouldPause: false,
+                shouldStopAndFreeRAM: false,
+                shouldMuteAudio: ruleMutesAudio,
+                isHardwareSleepOrLock: false,
+                pauseReason: nil
+            ),
+            ruleMatch: ruleEval
+        )
+    }
+
+    private func applyPolicy(_ policy: PowerPolicyState, ruleMatch: AppRuleEvaluation?) {
+        let changed = (policy != lastPolicy) || (ruleMatch != activeRuleMatch)
+        lastPolicy = policy
+
+        self.powerPauseReason = policy.pauseReason
+        self.isSystemPaused = policy.shouldPause
+        self.isStoppedToFreeRAM = policy.shouldStopAndFreeRAM
+        self.isRuleMuted = policy.shouldMuteAudio
+        self.activeRuleMatch = ruleMatch
+        if changed {
+            self.delegate?.powerMonitorDidUpdatePolicy(policy)
+        }
+    }
+}

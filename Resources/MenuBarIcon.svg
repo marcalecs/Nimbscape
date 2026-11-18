@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Minimal macOS Menu Bar Template Icon: Display + Opposing Interwoven Waves -->
+  <rect x="2.5" y="4" width="19" height="13.5" rx="3"/>
+  <path d="M 3 9.2 C 7.5 7.2, 11.5 13.5, 21 12.2"/>
+  <path d="M 3 14.2 C 8.5 15.2, 13.5 9.2, 21 9.8"/>
+  <path d="M 8.5 20.5 H 15.5"/>
+</svg>

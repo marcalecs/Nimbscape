@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Misty Alpine Dawn</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #0c1320; }
+    canvas { display: block; width: 100%; height: 100%; }
+  </style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+  <script>
+    const canvas = document.getElementById('c');
+    const ctx = canvas.getContext('2d', { alpha: false });
+    const skyCanvas = document.createElement('canvas');
+    const skyContext = skyCanvas.getContext('2d');
+
+    let w = 0, h = 0;
+    let mx = 0, my = 0, smoothMouseX = 0, smoothMouseY = 0;
+    let stars = [];
+    let ridges = [];
+    let mists = [];
+
+    window.addEventListener('ns-mousemove', (e) => {
+      if (e.detail) { mx = e.detail.x || 0; my = e.detail.y || 0; }
+    });
+
+    function seeded(seed) {
+      let s = seed % 2147483647;
+      if (s <= 0) s += 2147483646;
+      return () => { s = (s * 16807) % 2147483647; return (s - 1) / 2147483646; };
+    }
+
+    function buildRidge(rand, baseY, amp, freq1, freq2, phase, points) {
+      const pts = [];
+      for (let i = 0; i <= points; i++) {
+        const t = i / points;
+        const n =
+          Math.sin(t * Math.PI * freq1 + phase) * amp * 0.55 +
+          Math.sin(t * Math.PI * freq2 + phase * 1.7) * amp * 0.28 +
+          Math.sin(t * Math.PI * (freq2 * 2.1) + phase * 0.6) * amp * 0.12 +
+          (rand() - 0.5) * amp * 0.06;
+        pts.push({ t, y: baseY - Math.abs(n) * 0.85 - n * 0.35 });
+      }
+      return pts;
+    }
+
+    function buildScene() {
+      w = canvas.width = skyCanvas.width = Math.max(1, window.innerWidth);
+      h = canvas.height = skyCanvas.height = Math.max(1, window.innerHeight);
+
+      const grad = skyContext.createLinearGradient(0, 0, 0, h);
+      grad.addColorStop(0.0, '#0a101d');
+      grad.addColorStop(0.32, '#132036');
+      grad.addColorStop(0.60, '#233852');
+      grad.addColorStop(0.78, '#4d5b73');
+      grad.addColorStop(0.92, '#7d6b78');
+      grad.addColorStop(1.0, '#262b38');
+      skyContext.fillStyle = grad;
+      skyContext.fillRect(0, 0, w, h);
+
+      const glow = skyContext.createRadialGradient(w * 0.54, h * 0.66, 10, w * 0.54, h * 0.66, Math.max(w, h) * 0.55);
+      glow.addColorStop(0, 'rgba(232, 186, 158, 0.26)');
+      glow.addColorStop(0.45, 'rgba(154, 134, 158, 0.12)');
+      glow.addColorStop(1, 'rgba(10, 16, 29, 0)');
+      skyContext.fillStyle = glow;
+      skyContext.fillRect(0, 0, w, h);
+
+      const rand = seeded(4207);
+      stars = Array.from({ length: 65 }, () => ({
+        x: rand() * w,
+        y: rand() * h * 0.48,
+        r: rand() * 1.15 + 0.35,
+        phase: rand() * Math.PI * 2,
+        speed: 0.4 + rand() * 0.9
+      }));
+
+      ridges = [
+        { pts: buildRidge(rand, h * 0.60, h * 0.12, 2.6, 5.8, 0.4, 70), color: '#293b54', depth: 0.18, mistColor: 'rgba(168, 178, 198, 0.12)' },
+        { pts: buildRidge(rand, h * 0.68, h * 0.11, 3.1, 6.9, 2.1, 70), color: '#1e2e45', depth: 0.36, mistColor: 'rgba(130, 152, 178, 0.11)' },
+        { pts: buildRidge(rand, h * 0.76, h * 0.10, 2.3, 5.2, 4.0, 70), color: '#152236', depth: 0.60, mistColor: 'rgba(98, 124, 152, 0.09)' },
+        { pts: buildRidge(rand, h * 0.85, h * 0.08, 3.4, 7.5, 1.3, 70), color: '#0e1726', depth: 0.88, mistColor: 'rgba(60, 82, 108, 0.08)' },
+        { pts: buildRidge(rand, h * 0.93, h * 0.06, 2.0, 4.8, 5.1, 70), color: '#080e18', depth: 1.15, mistColor: null }
+      ];
+
+      mists = Array.from({ length: 6 }, (_, i) => ({
+        x: rand() * w,
+        y: h * (0.56 + i * 0.065),
+        rw: w * (0.45 + rand() * 0.35),
+        rh: h * (0.06 + rand() * 0.05),
+        vx: (i % 2 === 0 ? 1 : -1) * (4 + rand() * 5),
+        alpha: 0.05 + rand() * 0.045,
+        layer: Math.min(3, Math.floor(i / 2))
+      }));
+    }
+
+    window.addEventListener('resize', buildScene);
+    buildScene();
+
+    let t = 0;
+    let last = performance.now();
+
+    function draw(now) {
+      const dt = Math.min(0.05, Math.max(0, (now - last) / 1000));
+      last = now;
+      const speed = window.__nsSpeed ?? 1.0;
+      t += dt * speed;
+      smoothMouseX += (mx - smoothMouseX) * 0.04;
+      smoothMouseY += (my - smoothMouseY) * 0.04;
+
+      ctx.drawImage(skyCanvas, 0, 0);
+
+      for (let i = 0; i < stars.length; i++) {
+        const s = stars[i];
+        const a = 0.25 + 0.45 * (0.5 + 0.5 * Math.sin(t * s.speed + s.phase));
+        ctx.fillStyle = `rgba(225, 236, 255, ${a.toFixed(3)})`;
+        ctx.fillRect(s.x - smoothMouseX * 4, s.y - smoothMouseY * 3, s.r, s.r);
+      }
+
+      for (let rIdx = 0; rIdx < ridges.length; rIdx++) {
+        const r = ridges[rIdx];
+        const px = -smoothMouseX * 16 * r.depth;
+        const py = -smoothMouseY * 7 * r.depth;
+
+        ctx.beginPath();
+        ctx.moveTo(-40 + px, h + 40);
+        for (let i = 0; i < r.pts.length; i++) {
+          const p = r.pts[i];
+          const x = -40 + p.t * (w + 80) + px;
+          const y = p.y + py;
+          if (i === 0) ctx.lineTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.lineTo(w + 40 + px, h + 40);
+        ctx.closePath();
+        ctx.fillStyle = r.color;
+        ctx.fill();
+
+        for (let mIdx = 0; mIdx < mists.length; mIdx++) {
+          const m = mists[mIdx];
+          if (m.layer !== rIdx) continue;
+          m.x += m.vx * dt * speed;
+          if (m.x > w + m.rw) m.x = -m.rw;
+          if (m.x < -m.rw) m.x = w + m.rw;
+
+          ctx.save();
+          ctx.translate(m.x + px, m.y + py);
+          ctx.scale(1, 0.24);
+          const mg = ctx.createRadialGradient(0, 0, 10, 0, 0, m.rw);
+          mg.addColorStop(0, `rgba(195, 210, 228, ${m.alpha})`);
+          mg.addColorStop(0.55, `rgba(195, 210, 228, ${(m.alpha * 0.35).toFixed(4)})`);
+          mg.addColorStop(1, 'rgba(195, 210, 228, 0)');
+          ctx.fillStyle = mg;
+          ctx.beginPath();
+          ctx.arc(0, 0, m.rw, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
+      }
+
+      requestAnimationFrame(draw);
+    }
+
+    requestAnimationFrame(draw);
+  </script>
+</body>
+</html>
