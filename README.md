@@ -2,6 +2,10 @@
 
 Native macOS live wallpaper app written in strict Swift 6 with zero third-party dependencies.
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/marcalecs/Nimbscape/refs/heads/assets/star-nimbscape.gif" alt="Star Nimbscape on GitHub" width="760" />
+</p>
+
 ## Features
 
 - **Native Desktop Layering**: Renders live video (`.mp4`, `.mov`, `.m4v`, `.webm`), HTML5/Canvas/WebGL scenes, animated GIFs (`ImageIO`), and images cleanly below desktop icons and widgets.
