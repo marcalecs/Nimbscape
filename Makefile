@@ -1,4 +1,4 @@
-.PHONY: all build run clean
+.PHONY: all build run dmg clean
 
 all: build
 
@@ -10,5 +10,9 @@ run:
 	chmod +x build.sh
 	./build.sh
 
+dmg: build
+	chmod +x create_dmg.sh
+	./create_dmg.sh
+
 clean:
-	rm -rf build Nimbscape.app
+	rm -rf build Nimbscape.app Nimbscape.dmg
