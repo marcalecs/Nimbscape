@@ -145,7 +145,7 @@ public final class HDCatalogDownloader: ObservableObject {
         let destThumb = wallpapersDirectory.appendingPathComponent("\(item.id).jpg")
 
         if FileManager.default.fileExists(atPath: destMP4.path),
-           let size = WallpaperEngineParser.fileSizeBytes(at: destMP4), size > 100_000 {
+           let size = WallpaperPackageParser.fileSizeBytes(at: destMP4), size > 100_000 {
             finalizeImport(item: item, mp4URL: destMP4, thumbURL: destThumb, resolutionOverride: nil, activate: activate)
             isDownloading = false
             downloadingItemID = nil
@@ -187,7 +187,7 @@ public final class HDCatalogDownloader: ObservableObject {
             statusText = "Downloading \(resolution ?? "HD") MP4: \(item.title)..."
             try await downloadFileToDisk(request: dlReq, destinationURL: destMP4, resolutionLabel: resolution ?? "HD")
 
-            guard let size = WallpaperEngineParser.fileSizeBytes(at: destMP4), size > 50_000 else {
+            guard let size = WallpaperPackageParser.fileSizeBytes(at: destMP4), size > 50_000 else {
                 try? FileManager.default.removeItem(at: destMP4)
                 throw NSError(domain: "HDCatalog", code: -3, userInfo: [NSLocalizedDescriptionKey: "Downloaded file was too small or invalid."])
             }
@@ -337,7 +337,7 @@ public final class HDCatalogDownloader: ObservableObject {
         resolutionOverride: String?,
         activate: Bool
     ) {
-        var wp = WallpaperEngineParser.parseVideoFile(at: mp4URL, source: .localImport)
+        var wp = WallpaperPackageParser.parseVideoFile(at: mp4URL, source: .localImport)
         wp.title = item.title
         if FileManager.default.fileExists(atPath: thumbURL.path) {
             wp.previewPath = thumbURL.path

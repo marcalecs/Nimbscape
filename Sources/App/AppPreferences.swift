@@ -45,9 +45,9 @@ public enum WindowPauseMode: String, Codable, CaseIterable, Sendable {
 public class AppPreferences: ObservableObject {
     public static let shared = AppPreferences()
 
-    public static var defaultWorkshopPath: String {
+    public static var defaultCollectionPath: String {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
-        return "\(home)/Library/Application Support/Steam/steamapps/workshop/content/431960"
+        return "\(home)/Pictures/Nimbscape"
     }
 
     private enum Keys {
@@ -64,7 +64,7 @@ public class AppPreferences: ObservableObject {
         static let appearanceMode = "appearanceMode"
         static let hasCompletedOnboarding = "hasCompletedOnboarding"
         static let quickSwitcherHotkeyEnabled = "quickSwitcherHotkeyEnabled"
-        static let workshopFolderPath = "workshopFolderPath"
+        static let collectionFolderPath = "collectionFolderPath"
         static let syncLockScreenWallpaper = "syncLockScreenWallpaper"
         static let smoothSlowStop = "smoothSlowStop"
         static let slowStopOnUnlock = "slowStopOnUnlock"
@@ -75,9 +75,6 @@ public class AppPreferences: ObservableObject {
         static let screensaverEnabled = "screensaverEnabled"
         static let screensaverIdleMinutes = "screensaverIdleMinutes"
         static let mouseParallaxTracking = "mouseParallaxTracking"
-        static let steamUsername = "steamUsername"
-        static let customSteamcmdPath = "customSteamcmdPath"
-        static let allowScenePreviewFallback = "allowScenePreviewFallback"
     }
 
     @Published public var isPaused: Bool {
@@ -135,8 +132,8 @@ public class AppPreferences: ObservableObject {
         didSet { UserDefaults.standard.set(quickSwitcherHotkeyEnabled, forKey: Keys.quickSwitcherHotkeyEnabled) }
     }
 
-    @Published public var workshopFolderPath: String {
-        didSet { UserDefaults.standard.set(workshopFolderPath, forKey: Keys.workshopFolderPath) }
+    @Published public var collectionFolderPath: String {
+        didSet { UserDefaults.standard.set(collectionFolderPath, forKey: Keys.collectionFolderPath) }
     }
 
     @Published public var syncLockScreenWallpaper: Bool {
@@ -179,18 +176,6 @@ public class AppPreferences: ObservableObject {
         didSet { UserDefaults.standard.set(mouseParallaxTracking, forKey: Keys.mouseParallaxTracking) }
     }
 
-    @Published public var steamUsername: String {
-        didSet { UserDefaults.standard.set(steamUsername, forKey: Keys.steamUsername) }
-    }
-
-    @Published public var customSteamcmdPath: String {
-        didSet { UserDefaults.standard.set(customSteamcmdPath, forKey: Keys.customSteamcmdPath) }
-    }
-
-    @Published public var allowScenePreviewFallback: Bool {
-        didSet { UserDefaults.standard.set(allowScenePreviewFallback, forKey: Keys.allowScenePreviewFallback) }
-    }
-
     @Published public var launchAtLogin: Bool {
         didSet {
             do {
@@ -224,7 +209,7 @@ public class AppPreferences: ObservableObject {
             Keys.appearanceMode: AppAppearanceMode.dark.rawValue,
             Keys.hasCompletedOnboarding: false,
             Keys.quickSwitcherHotkeyEnabled: true,
-            Keys.workshopFolderPath: Self.defaultWorkshopPath,
+            Keys.collectionFolderPath: Self.defaultCollectionPath,
             Keys.syncLockScreenWallpaper: true,
             Keys.smoothSlowStop: true,
             Keys.slowStopOnUnlock: false,
@@ -234,10 +219,7 @@ public class AppPreferences: ObservableObject {
             Keys.crossfadeTransitions: true,
             Keys.screensaverEnabled: false,
             Keys.screensaverIdleMinutes: 5,
-            Keys.mouseParallaxTracking: true,
-            Keys.steamUsername: "",
-            Keys.customSteamcmdPath: "",
-            Keys.allowScenePreviewFallback: true
+            Keys.mouseParallaxTracking: true
         ])
 
         self.isPaused = defaults.bool(forKey: Keys.isPaused)
@@ -254,7 +236,7 @@ public class AppPreferences: ObservableObject {
         self.appearanceMode = AppAppearanceMode(rawValue: defaults.string(forKey: Keys.appearanceMode) ?? "") ?? .dark
         self.hasCompletedOnboarding = defaults.bool(forKey: Keys.hasCompletedOnboarding)
         self.quickSwitcherHotkeyEnabled = defaults.bool(forKey: Keys.quickSwitcherHotkeyEnabled)
-        self.workshopFolderPath = defaults.string(forKey: Keys.workshopFolderPath) ?? Self.defaultWorkshopPath
+        self.collectionFolderPath = defaults.string(forKey: Keys.collectionFolderPath) ?? Self.defaultCollectionPath
         self.syncLockScreenWallpaper = defaults.bool(forKey: Keys.syncLockScreenWallpaper)
         self.smoothSlowStop = defaults.bool(forKey: Keys.smoothSlowStop)
         self.slowStopOnUnlock = defaults.bool(forKey: Keys.slowStopOnUnlock)
@@ -267,9 +249,6 @@ public class AppPreferences: ObservableObject {
         let savedIdle = defaults.integer(forKey: Keys.screensaverIdleMinutes)
         self.screensaverIdleMinutes = max(1, min(60, savedIdle > 0 ? savedIdle : 5))
         self.mouseParallaxTracking = defaults.bool(forKey: Keys.mouseParallaxTracking)
-        self.steamUsername = defaults.string(forKey: Keys.steamUsername) ?? ""
-        self.customSteamcmdPath = defaults.string(forKey: Keys.customSteamcmdPath) ?? ""
-        self.allowScenePreviewFallback = defaults.bool(forKey: Keys.allowScenePreviewFallback)
         self.launchAtLogin = (SMAppService.mainApp.status == .enabled)
     }
 

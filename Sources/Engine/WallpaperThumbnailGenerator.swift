@@ -104,7 +104,7 @@ public final class RemotePreviewCache: ObservableObject {
     private var diskCacheDir: URL {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support")
-        let dir = appSupport.appendingPathComponent("Nimbscape/WorkshopThumbCache", isDirectory: true)
+        let dir = appSupport.appendingPathComponent("Nimbscape/CatalogThumbCache", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
     }
@@ -182,7 +182,7 @@ public final class WallpaperThumbnailGenerator: NSObject, ObservableObject, WKNa
     private var captureTimeoutWork: DispatchWorkItem?
 
     private var cacheDir: URL {
-        WorkshopScanner.thumbnailsCacheDirectory
+        FolderCollectionScanner.thumbnailsCacheDirectory
     }
 
     private override init() {
@@ -312,7 +312,7 @@ public final class WallpaperThumbnailGenerator: NSObject, ObservableObject, WKNa
             window.cancelAnimationFrame = function(id) {
                 clearTimeout(id);
             };
-            window.wallpaperRegisterAudioListener = function(cb) {
+            window.nimbscapeRegisterAudioListener = function(cb) {
                 if (typeof cb !== 'function') return;
                 const arr = new Array(128);
                 for (let i = 0; i < 128; i++) {

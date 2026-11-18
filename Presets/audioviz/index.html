@@ -24,8 +24,8 @@
     const target = new Float32Array(BANDS);
     let lastAudioAt = 0;
 
-    if (typeof window.wallpaperRegisterAudioListener === 'function') {
-      window.wallpaperRegisterAudioListener((audioArray) => {
+    if (typeof window.nimbscapeRegisterAudioListener === 'function') {
+      window.nimbscapeRegisterAudioListener((audioArray) => {
         if (!Array.isArray(audioArray) || audioArray.length < BANDS) return;
         lastAudioAt = performance.now();
         for (let i = 0; i < BANDS; i++) {

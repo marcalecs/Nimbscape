@@ -10,7 +10,7 @@ public enum WallpaperType: String, Codable, CaseIterable, Sendable {
 public enum WallpaperSource: String, Codable, CaseIterable, Sendable {
     case builtIn
     case localImport
-    case steamWorkshop
+    case catalog
     case webURL
 }
 

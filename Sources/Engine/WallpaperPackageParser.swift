@@ -15,7 +15,7 @@ public enum WallpaperImportError: LocalizedError, Equatable, Sendable {
         case .invalidProjectJSON(let detail):
             return "Invalid project.json manifest: \(detail)"
         case .unsupportedScenePackage(let file):
-            return "Compiled Wallpaper Engine .pkg scenes (\(file)) require Windows DirectX and cannot run natively on macOS. Select a Video or Web wallpaper instead."
+            return "Unsupported binary package (\(file)). Select a video, HTML5 web scene, or image instead."
         case .missingSupportedMedia(let folder):
             return "No supported video (.mp4/.mov/.m4v/.webm), web scene (index.html), or image found in \"\(folder)\"."
         }
@@ -82,7 +82,7 @@ public struct ProjectJSONGeneral: Codable {
     public let properties: [String: ProjectJSONProperty]?
 }
 
-public struct WallpaperEngineProject: Codable {
+public struct WallpaperManifest: Codable {
     public let title: String?
     public let description: String?
     public let file: String?
@@ -92,7 +92,7 @@ public struct WallpaperEngineProject: Codable {
     public let general: ProjectJSONGeneral?
 }
 
-public class WallpaperEngineParser {
+public class WallpaperPackageParser {
     private static let videoExtensions: Set<String> = ["mp4", "mov", "m4v", "webm"]
     private static let imageExtensions: Set<String> = ["png", "jpg", "jpeg", "heic", "webp", "gif"]
 
@@ -128,7 +128,7 @@ public class WallpaperEngineParser {
         if fileManager.fileExists(atPath: projectJSONURL.path) {
             do {
                 let data = try Data(contentsOf: projectJSONURL)
-                let project = try JSONDecoder().decode(WallpaperEngineProject.self, from: data)
+                let project = try JSONDecoder().decode(WallpaperManifest.self, from: data)
 
                 if let pTitle = project.title, !pTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     title = pTitle

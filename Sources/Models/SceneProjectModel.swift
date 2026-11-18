@@ -117,7 +117,7 @@ public enum SceneExporter {
               vignette: \(config.vignetteIntensity)
             };
 
-            window.wallpaperPropertyListener = {
+            window.nimbscapePropertyListener = {
               applyUserProperties: function(props) {
                 if (props.particlespeed) CFG.particleSpeed = Number(props.particlespeed.value) || CFG.particleSpeed;
                 if (props.parallaxstrength) CFG.parallaxStrength = Number(props.parallaxstrength.value) || CFG.parallaxStrength;
@@ -141,8 +141,8 @@ public enum SceneExporter {
 
             let audioBass = 0;
             const audioSpectrum = new Float32Array(64);
-            if (typeof window.wallpaperRegisterAudioListener === 'function') {
-              window.wallpaperRegisterAudioListener(arr => {
+            if (typeof window.nimbscapeRegisterAudioListener === 'function') {
+              window.nimbscapeRegisterAudioListener(arr => {
                 if (!arr || arr.length < 64) return;
                 let bass = 0;
                 for (let i = 0; i < 64; i++) {
@@ -385,7 +385,7 @@ public enum SceneExporter {
             try? jsonData.write(to: folderURL.appendingPathComponent("project.json"))
         }
 
-        if case .success(var parsed) = WallpaperEngineParser.parseFolderResult(at: folderURL, source: .localImport) {
+        if case .success(var parsed) = WallpaperPackageParser.parseFolderResult(at: folderURL, source: .localImport) {
             if parsed.previewPath == nil { parsed.previewPath = previewPath }
             return parsed
         }

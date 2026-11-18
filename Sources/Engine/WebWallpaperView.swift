@@ -194,8 +194,8 @@ public class WebWallpaperView: NSView, WKNavigationDelegate {
           lastFrameTime = performance.now();
           scheduleNextFrame();
         }
-        if (window.wallpaperPropertyListener && typeof window.wallpaperPropertyListener.setPaused === 'function') {
-          try { window.wallpaperPropertyListener.setPaused(!!paused); } catch (e) {}
+        if (window.nimbscapePropertyListener && typeof window.nimbscapePropertyListener.setPaused === 'function') {
+          try { window.nimbscapePropertyListener.setPaused(!!paused); } catch (e) {}
         }
       };
 
@@ -251,13 +251,13 @@ public class WebWallpaperView: NSView, WKNavigationDelegate {
           else if (v !== '' && !isNaN(Number(v)) && !String(v).includes(' ')) parsed = Number(v);
           mapped[k] = { value: parsed };
         }
-        if (window.wallpaperPropertyListener && typeof window.wallpaperPropertyListener.applyUserProperties === 'function') {
-          try { window.wallpaperPropertyListener.applyUserProperties(mapped); } catch (e) {}
+        if (window.nimbscapePropertyListener && typeof window.nimbscapePropertyListener.applyUserProperties === 'function') {
+          try { window.nimbscapePropertyListener.applyUserProperties(mapped); } catch (e) {}
         }
       };
 
       let audioListeners = [];
-      window.wallpaperRegisterAudioListener = function(cb) {
+      window.nimbscapeRegisterAudioListener = function(cb) {
         if (typeof cb === 'function') {
           audioListeners.push(cb);
         }

@@ -6,7 +6,7 @@ public enum SidebarSection: String, CaseIterable, Identifiable {
     case installed = "Installed"
     case favorites = "Favorites"
     case playlists = "Playlists"
-    case discover = "Discover & Workshop"
+    case discover = "Discover"
     case sceneEditor = "Scene Editor"
     case displays = "Displays & Profiles"
     case create = "Create"
@@ -33,7 +33,7 @@ public struct MainWindowView: View {
     @ObservedObject var preferences = AppPreferences.shared
     @ObservedObject var power = PowerMonitor.shared
     @ObservedObject var manager = WallpaperManager.shared
-    @ObservedObject var scanner = WorkshopScanner.shared
+    @ObservedObject var scanner = FolderCollectionScanner.shared
     @ObservedObject var appRules = AppRulesStore.shared
     @ObservedObject var profiles = ProfileStore.shared
     @ObservedObject var audioVisualizer = AudioVisualizerEngine.shared
@@ -46,8 +46,7 @@ public struct MainWindowView: View {
     @State private var typeFilter: WallpaperType? = nil
     @State private var importErrorMessage: String? = nil
     @State private var newProfileName: String = ""
-    @State private var workshopMode: Int = 0
-    @State private var hdCatalogSearchBridge: String = ""
+    @State private var discoverTabMode: Int = 0
 
     public init() {}
 
@@ -96,7 +95,7 @@ public struct MainWindowView: View {
                         case .playlists:
                             PlaylistsView()
                         case .discover:
-                            discoverWorkshopView
+                            discoverView
                         case .sceneEditor:
                             SceneEditorView(onSavedAndApplied: { item in
                                 selectedWallpaperID = item.id
@@ -246,66 +245,53 @@ public struct MainWindowView: View {
         }
     }
 
-    private var discoverWorkshopView: some View {
+    private var discoverView: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Discover Live Wallpapers")
                         .font(.title2)
                         .fontWeight(.bold)
-                    Text("1080p & 4K MP4 catalog with zero login required, plus Steam Workshop & local folder import.")
+                    Text("Browse 1080p & 4K live wallpapers or scan a local folder of wallpaper packages.")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
                 Spacer()
-                Picker("", selection: $workshopMode) {
+                Picker("", selection: $discoverTabMode) {
                     Text("HD Catalog").tag(0)
-                    Text("Steam Workshop").tag(1)
-                    Text("Local Folder").tag(2)
+                    Text("Local Folder").tag(1)
                 }
                 .pickerStyle(.segmented)
-                .frame(width: 340)
+                .frame(width: 240)
             }
 
-            if workshopMode == 0 {
+            if discoverTabMode == 0 {
                 HDCatalogGridView(
-                    externalSearchQuery: $hdCatalogSearchBridge,
                     onImportedAndApplied: { item in
                         selectedWallpaperID = item.id
-                    }
-                )
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if workshopMode == 1 {
-                SteamWorkshopBrowserView(
-                    onImportedAndApplied: { item in
-                        selectedWallpaperID = item.id
-                    },
-                    onSearchInHDCatalog: { query in
-                        hdCatalogSearchBridge = query
-                        workshopMode = 0
                     }
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                localWorkshopScannerView
+                localCollectionScannerView
             }
         }
         .padding(18)
     }
 
-    private var localWorkshopScannerView: some View {
+    private var localCollectionScannerView: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Text("Local Steam Workshop Folder Scanner")
+                Text("Local Folder Collection Scanner")
                     .font(.headline)
                 Spacer()
                 Button("Choose Folder...") {
-                    chooseWorkshopFolder()
+                    chooseCollectionFolder()
                 }
                 .buttonStyle(.bordered)
 
                 Button(action: { scanner.scan() }) {
-                    Label(scanner.isScanning ? "Scanning..." : "Scan Workshop", systemImage: "shippingbox")
+                    Label(scanner.isScanning ? "Scanning..." : "Scan Folder", systemImage: "shippingbox")
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(scanner.isScanning)
@@ -314,7 +300,7 @@ public struct MainWindowView: View {
             HStack(spacing: 8) {
                 Image(systemName: "folder")
                     .foregroundColor(.secondary)
-                Text(preferences.workshopFolderPath)
+                Text(preferences.collectionFolderPath)
                     .font(.system(size: 12, design: .monospaced))
                     .foregroundColor(.secondary)
                     .lineLimit(1)
@@ -351,7 +337,7 @@ public struct MainWindowView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
                         if result.candidates.isEmpty {
-                            Text("No compatible Video or Web Workshop items found in this directory.")
+                            Text("No compatible video, web, or image wallpaper packages found in this directory.")
                                 .foregroundColor(.secondary)
                         } else {
                             LazyVGrid(columns: [GridItem(.adaptive(minimum: 240, maximum: 300), spacing: 14)], spacing: 14) {
@@ -424,7 +410,7 @@ public struct MainWindowView: View {
                     Image(systemName: "shippingbox")
                         .font(.system(size: 38))
                         .foregroundColor(.secondary)
-                    Text("Click \"Scan Workshop\" to detect local Steam Workshop wallpapers.")
+                    Text("Click \"Scan Folder\" to detect local wallpaper packages.")
                         .foregroundColor(.secondary)
                 }
                 .frame(maxWidth: .infinity)
@@ -905,12 +891,12 @@ public struct MainWindowView: View {
 
                 GroupBox("Engine & Storage") {
                     HStack {
-                        let cacheBytes = WorkshopScanner.thumbnailCacheSizeBytes()
+                        let cacheBytes = FolderCollectionScanner.thumbnailCacheSizeBytes()
                         Text("Thumbnail Cache: \(ByteCountFormatter.string(fromByteCount: cacheBytes, countStyle: .file))")
                             .font(.subheadline)
                         Spacer()
                         Button("Clear Thumbnail Cache") {
-                            WorkshopScanner.clearThumbnailCache()
+                            FolderCollectionScanner.clearThumbnailCache()
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
@@ -929,9 +915,9 @@ public struct MainWindowView: View {
         panel.allowedContentTypes = [.movie, .mpeg4Movie, .quickTimeMovie]
         if panel.runModal() == .OK, let url = panel.url {
             importErrorMessage = nil
-            let item = WallpaperEngineParser.parseVideoFile(at: url)
+            let item = WallpaperPackageParser.parseVideoFile(at: url)
             store.addCustomWallpaper(item, activate: true)
-            WorkshopScanner.generateThumbnailAsync(for: item)
+            FolderCollectionScanner.generateThumbnailAsync(for: item)
             selectedWallpaperID = item.id
             selectedSection = .installed
         }
@@ -944,7 +930,7 @@ public struct MainWindowView: View {
         panel.allowedContentTypes = [.image, .png, .jpeg, .heic, .gif]
         if panel.runModal() == .OK, let url = panel.url {
             importErrorMessage = nil
-            let item = WallpaperEngineParser.parseImageFile(at: url)
+            let item = WallpaperPackageParser.parseImageFile(at: url)
             store.addCustomWallpaper(item, activate: true)
             selectedWallpaperID = item.id
             selectedSection = .installed
@@ -956,26 +942,26 @@ public struct MainWindowView: View {
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         if panel.runModal() == .OK, let url = panel.url {
-            switch WallpaperEngineParser.parseFolderResult(at: url, source: .localImport) {
+            switch WallpaperPackageParser.parseFolderResult(at: url, source: .localImport) {
             case .success(let item):
                 importErrorMessage = nil
                 store.addCustomWallpaper(item, activate: true)
-                WorkshopScanner.generateThumbnailAsync(for: item)
+                FolderCollectionScanner.generateThumbnailAsync(for: item)
                 selectedWallpaperID = item.id
                 selectedSection = .installed
-            case .failure(let err):
-                importErrorMessage = err.localizedDescription
+            case .failure(let error):
+                importErrorMessage = error.localizedDescription
             }
         }
     }
 
-    private func chooseWorkshopFolder() {
+    private func chooseCollectionFolder() {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
-        panel.message = "Select your Steam Workshop 431960 folder"
+        panel.message = "Select a local folder containing wallpaper packages"
         if panel.runModal() == .OK, let url = panel.url {
-            preferences.workshopFolderPath = url.path
+            preferences.collectionFolderPath = url.path
             scanner.scan(directoryURL: url)
         }
     }

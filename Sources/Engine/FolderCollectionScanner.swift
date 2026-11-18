@@ -3,7 +3,7 @@ import AVFoundation
 import AppKit
 import Combine
 
-public struct WorkshopCandidate: Identifiable, Equatable, Sendable {
+public struct CollectionCandidate: Identifiable, Equatable, Sendable {
     public let id: String
     public let folderURL: URL
     public var item: WallpaperItem
@@ -17,7 +17,7 @@ public struct WorkshopCandidate: Identifiable, Equatable, Sendable {
     }
 }
 
-public struct SkippedWorkshopFolder: Identifiable, Equatable, Sendable {
+public struct SkippedCollectionFolder: Identifiable, Equatable, Sendable {
     public let id: String
     public let folderName: String
     public let reason: String
@@ -29,34 +29,34 @@ public struct SkippedWorkshopFolder: Identifiable, Equatable, Sendable {
     }
 }
 
-public struct WorkshopScanResult: Equatable, Sendable {
+public struct CollectionScanResult: Equatable, Sendable {
     public let scannedPath: String
-    public var candidates: [WorkshopCandidate]
-    public var skipped: [SkippedWorkshopFolder]
+    public var candidates: [CollectionCandidate]
+    public var skipped: [SkippedCollectionFolder]
     public let scannedAt: Date
 }
 
-public enum WorkshopScanError: LocalizedError, Equatable, Sendable {
+public enum CollectionScanError: LocalizedError, Equatable, Sendable {
     case folderNotFound(String)
     case unreadableDirectory(String)
 
     public var errorDescription: String? {
         switch self {
         case .folderNotFound(let path):
-            return "Steam Workshop folder not found at:\n\(path)\n\nSelect a custom Workshop folder containing Wallpaper Engine items."
+            return "Collection folder not found at:\n\(path)\n\nChoose a local folder containing wallpaper packages."
         case .unreadableDirectory(let detail):
-            return "Unable to read Workshop folder: \(detail)"
+            return "Unable to read folder: \(detail)"
         }
     }
 }
 
 @MainActor
-public class WorkshopScanner: ObservableObject {
-    public static let shared = WorkshopScanner()
+public class FolderCollectionScanner: ObservableObject {
+    public static let shared = FolderCollectionScanner()
 
     @Published public private(set) var isScanning: Bool = false
-    @Published public private(set) var lastResult: WorkshopScanResult?
-    @Published public private(set) var lastError: WorkshopScanError?
+    @Published public private(set) var lastResult: CollectionScanResult?
+    @Published public private(set) var lastError: CollectionScanError?
 
     public nonisolated static var thumbnailsCacheDirectory: URL {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
@@ -69,7 +69,7 @@ public class WorkshopScanner: ObservableObject {
     private init() {}
 
     public func scan(directoryURL: URL? = nil) {
-        let targetURL = directoryURL ?? URL(fileURLWithPath: AppPreferences.shared.workshopFolderPath)
+        let targetURL = directoryURL ?? URL(fileURLWithPath: AppPreferences.shared.collectionFolderPath)
         let targetPath = targetURL.path
 
         self.isScanning = true
@@ -81,13 +81,11 @@ public class WorkshopScanner: ObservableObject {
             }
         )
 
-        let allowFallback = AppPreferences.shared.allowScenePreviewFallback
         Task.detached(priority: .userInitiated) {
             let outcome = Self.performScanSync(
                 targetURL: targetURL,
                 targetPath: targetPath,
-                existingPaths: existingPaths,
-                allowScenePreviewFallback: allowFallback
+                existingPaths: existingPaths
             )
             await MainActor.run {
                 self.isScanning = false
@@ -95,9 +93,9 @@ public class WorkshopScanner: ObservableObject {
                 case .success(let result):
                     self.lastError = nil
                     self.lastResult = result
-                case .failure(let err):
+                case .failure(let error):
                     self.lastResult = nil
-                    self.lastError = err
+                    self.lastError = error
                 }
             }
         }
@@ -106,9 +104,8 @@ public class WorkshopScanner: ObservableObject {
     private nonisolated static func performScanSync(
         targetURL: URL,
         targetPath: String,
-        existingPaths: Set<String>,
-        allowScenePreviewFallback: Bool
-    ) -> Result<WorkshopScanResult, WorkshopScanError> {
+        existingPaths: Set<String>
+    ) -> Result<CollectionScanResult, CollectionScanError> {
         let fileManager = FileManager.default
         var isDir: ObjCBool = false
         guard fileManager.fileExists(atPath: targetPath, isDirectory: &isDir), isDir.boolValue else {
@@ -126,8 +123,8 @@ public class WorkshopScanner: ObservableObject {
             return .failure(.unreadableDirectory(error.localizedDescription))
         }
 
-        var candidates: [WorkshopCandidate] = []
-        var skipped: [SkippedWorkshopFolder] = []
+        var candidates: [CollectionCandidate] = []
+        var skipped: [SkippedCollectionFolder] = []
 
         for url in subdirs {
             let values = try? url.resourceValues(forKeys: [.isDirectoryKey])
@@ -136,10 +133,9 @@ public class WorkshopScanner: ObservableObject {
             let projectJSON = url.appendingPathComponent("project.json")
             guard fileManager.fileExists(atPath: projectJSON.path) else { continue }
 
-            switch WallpaperEngineParser.parseFolderResult(
+            switch WallpaperPackageParser.parseFolderResult(
                 at: url,
-                source: .steamWorkshop,
-                allowScenePreviewFallback: allowScenePreviewFallback
+                source: .localImport
             ) {
             case .success(var item):
                 if item.previewPath == nil && item.type == .video {
@@ -149,23 +145,23 @@ public class WorkshopScanner: ObservableObject {
                 }
                 let normalized = URL(fileURLWithPath: item.pathOrURL).standardizedFileURL.path
                 let imported = existingPaths.contains(normalized)
-                candidates.append(WorkshopCandidate(
+                candidates.append(CollectionCandidate(
                     id: url.lastPathComponent,
                     folderURL: url,
                     item: item,
                     isAlreadyImported: imported
                 ))
-            case .failure(let err):
-                skipped.append(SkippedWorkshopFolder(
+            case .failure(let error):
+                skipped.append(SkippedCollectionFolder(
                     folderName: url.lastPathComponent,
-                    reason: err.localizedDescription
+                    reason: error.localizedDescription
                 ))
             }
         }
 
         candidates.sort { $0.item.title.localizedCaseInsensitiveCompare($1.item.title) == .orderedAscending }
 
-        return .success(WorkshopScanResult(
+        return .success(CollectionScanResult(
             scannedPath: targetPath,
             candidates: candidates,
             skipped: skipped,
@@ -173,7 +169,7 @@ public class WorkshopScanner: ObservableObject {
         ))
     }
 
-    public func importCandidate(_ candidate: WorkshopCandidate, activate: Bool = false) {
+    public func importCandidate(_ candidate: CollectionCandidate, activate: Bool = false) {
         WallpaperStore.shared.addCustomWallpaper(candidate.item, activate: activate)
         refreshImportedFlags()
     }
@@ -191,9 +187,9 @@ public class WorkshopScanner: ObservableObject {
 
     public func refreshImportedFlags() {
         guard var result = lastResult else { return }
-        for idx in result.candidates.indices {
-            let path = result.candidates[idx].item.pathOrURL
-            result.candidates[idx].isAlreadyImported = WallpaperStore.shared.containsWallpaper(pathOrURL: path)
+        for index in result.candidates.indices {
+            let path = result.candidates[index].item.pathOrURL
+            result.candidates[index].isAlreadyImported = WallpaperStore.shared.containsWallpaper(pathOrURL: path)
         }
         self.lastResult = result
     }
@@ -218,9 +214,9 @@ public class WorkshopScanner: ObservableObject {
         ]
 
         var cgImage: CGImage?
-        for t in times {
-            if let img = try? generator.copyCGImage(at: t, actualTime: nil) {
-                cgImage = img
+        for time in times {
+            if let image = try? generator.copyCGImage(at: time, actualTime: nil) {
+                cgImage = image
                 break
             }
         }
@@ -256,8 +252,8 @@ public class WorkshopScanner: ObservableObject {
         let fileManager = FileManager.default
         let dir = thumbnailsCacheDirectory
         if let files = try? fileManager.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) {
-            for f in files {
-                try? fileManager.removeItem(at: f)
+            for file in files {
+                try? fileManager.removeItem(at: file)
             }
         }
     }

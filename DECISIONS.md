@@ -17,7 +17,7 @@
 
 ## Feature Architecture
 - **Playlists & Schedules**: Interval, Time-of-Day, On-Unlock, and Manual modes with shuffle and crossfade transitions.
-- **Audio Visualizer**: `ScreenCaptureKit` system audio loopback with `Accelerate/vDSP` 128-band stereo FFT driving `window.wallpaperRegisterAudioListener`.
+- **Audio Visualizer**: `ScreenCaptureKit` system audio loopback with `Accelerate/vDSP` 128-band stereo FFT driving `window.nimbscapeRegisterAudioListener`.
 - **2D Scene Editor**: Live `WKWebView` preview composer exporting standalone `index.html` + `project.json` scenes.
-- **Catalog & Workshop**: Native Full HD/4K MP4 catalog downloaded via background `URLSessionDownloadTask`, Steam Workshop metadata/SteamCMD importer, `.webm` HTML5 wrapper, and local Workshop folder scanner.
+- **Discover & Local Collections**: Native Full HD/4K MP4 catalog downloaded via background `URLSessionDownloadTask`, `.webm` HTML5 wrapper, and local folder collection scanner.
 - **System Integration**: `SMAppService.mainApp` launch at login, multi-monitor `ProfileStore`, idle `ScreensaverEngine`, and global Carbon hotkeys (`⌘⇧W`, `⌘⇧P`, `⌘⇧N`, `⌘⇧H`, `⌘⇧M`).
