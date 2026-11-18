@@ -4,10 +4,11 @@ all: build
 
 build:
 	chmod +x build.sh
-	./build.sh
+	./build.sh --no-open
 
-run: build
-	open Nimbscape.app
+run:
+	chmod +x build.sh
+	./build.sh
 
 clean:
 	rm -rf build Nimbscape.app

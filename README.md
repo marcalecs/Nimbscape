@@ -28,29 +28,33 @@ Native macOS live wallpaper app written in strict Swift 6 with zero third-party 
 - macOS 14.0 or later (Apple Silicon & Intel)
 - Xcode Command Line Tools (`xcode-select --install`)
 
-## Installation via `build.sh`
+## Installation
+
+Building locally via `build.sh` compiles `Nimbscape.app` natively for your Mac architecture and avoids macOS Gatekeeper quarantine warnings.
+
+### Option 1 — From Release ZIP (Recommended)
+
+1. Download `Nimbscape-v1.0.0.zip` from [Releases](https://github.com/marcalecs/Nimbscape/releases/latest) and unzip it.
+2. Open Terminal in the unzipped folder and run:
+
+```bash
+cd ~/Downloads/Nimbscape-v1.0.0
+chmod +x build.sh
+./build.sh --install
+```
+
+This compiles `Nimbscape.app`, copies it into `/Applications`, removes quarantine attributes, and launches it immediately.
+
+*(Use `./build.sh` without `--install` to build and run inside the current folder without copying to `/Applications`.)*
+
+### Option 2 — From Git
 
 ```bash
 git clone https://github.com/marcalecs/Nimbscape.git
 cd Nimbscape
 chmod +x build.sh
-./build.sh
+./build.sh --install
 ```
-
-After the build completes, launch the app or move it to `/Applications`:
-
-```bash
-open Nimbscape.app
-```
-
-To install permanently into Applications:
-
-```bash
-cp -R Nimbscape.app /Applications/
-open /Applications/Nimbscape.app
-```
-
-Alternatively, you can download a prebuilt archive from the [Releases](https://github.com/marcalecs/Nimbscape/releases) page.
 
 > **Note**: Enabling the optional real-time Audio Visualizer requests macOS *Screen & System Audio Recording* permission for `Nimbscape`.
 
