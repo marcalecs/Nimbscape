@@ -26,3 +26,7 @@
 
 ## Storage
 - *(2026-11-20)* `StorageJanitor` owns files Nimbscape downloads itself (`HDWallpapers`). Removing a library item deletes its managed video/preview unless another item references them; user-imported files elsewhere are never deleted. Launch cleanup removes legacy Steam/Workshop folders, interrupted `.part` downloads and unreferenced HD files, skipping files modified in the last 10 minutes or while a download runs. No size cap: downloads are library content, not cache.
+
+## Power & Multi-Display Pausing
+- *(2026-11-20)* Battery pause is threshold-based: `pauseOnBatteryBelowPercent` (default 20%, 100% keeps the old always-pause behavior). Battery level is computed as current/max capacity.
+- *(2026-11-20)* Window-occlusion pauses are per display. `PowerMonitor` maps each on-screen window to the display it mostly overlaps (CG ↔ AppKit coordinate flip) and reports covered displays in `PowerPolicyState.pausedDisplayIDs`; only when every display is covered does it raise the global `shouldPause` (keeping the slow-stop ramp). In Clone/Stretch the shared `AVQueuePlayer` keeps decoding while any display is uncovered.

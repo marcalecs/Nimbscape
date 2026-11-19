@@ -55,6 +55,7 @@ public class AppPreferences: ObservableObject {
         static let isMuted = "isMuted"
         static let volume = "volume"
         static let pauseOnBattery = "pauseOnBattery"
+        static let pauseOnBatteryBelowPercent = "pauseOnBatteryBelowPercent"
         static let pauseOnLowPowerMode = "pauseOnLowPowerMode"
         static let pauseOnFullscreen = "pauseOnFullscreen"
         static let pauseOnMaximized = "pauseOnMaximized"
@@ -91,6 +92,11 @@ public class AppPreferences: ObservableObject {
 
     @Published public var pauseOnBattery: Bool {
         didSet { UserDefaults.standard.set(pauseOnBattery, forKey: Keys.pauseOnBattery) }
+    }
+
+    /// On battery, wallpapers keep playing until the charge drops to this level (5...100; 100 = always pause).
+    @Published public var pauseOnBatteryBelowPercent: Int {
+        didSet { UserDefaults.standard.set(pauseOnBatteryBelowPercent, forKey: Keys.pauseOnBatteryBelowPercent) }
     }
 
     @Published public var pauseOnLowPowerMode: Bool {
@@ -200,6 +206,7 @@ public class AppPreferences: ObservableObject {
             Keys.isMuted: true,
             Keys.volume: 0.5,
             Keys.pauseOnBattery: true,
+            Keys.pauseOnBatteryBelowPercent: 20,
             Keys.pauseOnLowPowerMode: true,
             Keys.pauseOnFullscreen: true,
             Keys.pauseOnMaximized: true,
@@ -226,6 +233,7 @@ public class AppPreferences: ObservableObject {
         self.isMuted = defaults.bool(forKey: Keys.isMuted)
         self.volume = defaults.float(forKey: Keys.volume)
         self.pauseOnBattery = defaults.bool(forKey: Keys.pauseOnBattery)
+        self.pauseOnBatteryBelowPercent = max(5, min(100, defaults.integer(forKey: Keys.pauseOnBatteryBelowPercent)))
         self.pauseOnLowPowerMode = defaults.bool(forKey: Keys.pauseOnLowPowerMode)
         self.pauseOnFullscreen = defaults.bool(forKey: Keys.pauseOnFullscreen)
         self.pauseOnMaximized = defaults.bool(forKey: Keys.pauseOnMaximized)
