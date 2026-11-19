@@ -9,6 +9,7 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         AppPreferences.shared.applyAppearance()
 
         WallpaperManager.shared.start()
+        StorageJanitor.cleanupOnLaunch()
 
         _ = PlaylistStore.shared
         _ = ScreensaverEngine.shared

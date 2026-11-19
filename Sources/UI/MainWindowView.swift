@@ -891,6 +891,24 @@ public struct MainWindowView: View {
 
                 GroupBox("Engine & Storage") {
                     HStack {
+                        let hdBytes = StorageJanitor.managedSizeBytes()
+                        Text("Downloaded HD Wallpapers: \(ByteCountFormatter.string(fromByteCount: hdBytes, countStyle: .file))")
+                            .font(.subheadline)
+                        Spacer()
+                        Button("Show in Finder") {
+                            NSWorkspace.shared.open(HDCatalogDownloader.shared.wallpapersDirectory)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.top, 8)
+                    Text("Removing a downloaded wallpaper from the library also deletes its file.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 8)
+                    HStack {
                         let cacheBytes = FolderCollectionScanner.thumbnailCacheSizeBytes()
                         Text("Thumbnail Cache: \(ByteCountFormatter.string(fromByteCount: cacheBytes, countStyle: .file))")
                             .font(.subheadline)

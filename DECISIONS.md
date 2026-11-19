@@ -23,3 +23,6 @@
 - **2D Scene Editor**: Live `WKWebView` preview composer exporting standalone `index.html` + `project.json` scenes.
 - **Discover & Local Collections**: Native Full HD/4K MP4 catalog downloaded via background `URLSessionDownloadTask`, `.webm` HTML5 wrapper, and local folder collection scanner.
 - **System Integration**: `SMAppService.mainApp` launch at login, multi-monitor `ProfileStore`, idle `ScreensaverEngine`, and global Carbon hotkeys (`⌘⇧W`, `⌘⇧P`, `⌘⇧N`, `⌘⇧H`, `⌘⇧M`).
+
+## Storage
+- *(2026-11-20)* `StorageJanitor` owns files Nimbscape downloads itself (`HDWallpapers`). Removing a library item deletes its managed video/preview unless another item references them; user-imported files elsewhere are never deleted. Launch cleanup removes legacy Steam/Workshop folders, interrupted `.part` downloads and unreferenced HD files, skipping files modified in the last 10 minutes or while a download runs. No size cap: downloads are library content, not cache.

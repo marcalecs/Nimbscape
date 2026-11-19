@@ -175,8 +175,9 @@ public class WallpaperStore: ObservableObject {
         guard let index = wallpapers.firstIndex(where: { $0.id == id }) else { return }
         if wallpapers[index].isBuiltIn { return }
 
-        wallpapers.remove(at: index)
+        let removed = wallpapers.remove(at: index)
         saveCustomWallpapers()
+        StorageJanitor.deleteManagedFiles(of: removed, remaining: wallpapers)
 
         var updatedMap = activeWallpaperByDisplayID
         for (displayID, wallpaperID) in updatedMap where wallpaperID == id {
