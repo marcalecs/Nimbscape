@@ -77,7 +77,7 @@ public class WallpaperWindow: NSWindow {
         let expectedFrame = frameOverride ?? targetScreen?.frame
         let needsLevelFix = (self.level.rawValue != belowIconsLevel)
         let needsFrameFix = (expectedFrame != nil && self.frame != expectedFrame!)
-        let currentlyOnScreen = self.isVisible && self.isOnActiveSpace && self.isActuallyOnScreen
+        let currentlyOnScreen = self.isVisible && self.isOnActiveSpace
 
         if !forceReattach && currentlyOnScreen && !needsLevelFix && !needsFrameFix {
             return false

@@ -63,37 +63,72 @@ public class PowerMonitor: ObservableObject {
     private func setupNotifications() {
         let workspaceCenter = NSWorkspace.shared.notificationCenter
 
-        workspaceCenter.addObserver(self, selector: #selector(handleWillSleep), name: NSWorkspace.willSleepNotification, object: nil)
-        workspaceCenter.addObserver(self, selector: #selector(handleDidWake), name: NSWorkspace.didWakeNotification, object: nil)
-        workspaceCenter.addObserver(self, selector: #selector(handleScreensDidSleep), name: NSWorkspace.screensDidSleepNotification, object: nil)
-        workspaceCenter.addObserver(self, selector: #selector(handleScreensDidWake), name: NSWorkspace.screensDidWakeNotification, object: nil)
-        workspaceCenter.addObserver(self, selector: #selector(handleSessionResign), name: NSWorkspace.sessionDidResignActiveNotification, object: nil)
-        workspaceCenter.addObserver(self, selector: #selector(handleSessionActive), name: NSWorkspace.sessionDidBecomeActiveNotification, object: nil)
+        workspaceCenter.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: nil) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.handleWillSleep() }
+        }
+        workspaceCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: nil) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.handleDidWake() }
+        }
+        workspaceCenter.addObserver(forName: NSWorkspace.screensDidSleepNotification, object: nil, queue: nil) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.handleScreensDidSleep() }
+        }
+        workspaceCenter.addObserver(forName: NSWorkspace.screensDidWakeNotification, object: nil, queue: nil) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.handleScreensDidWake() }
+        }
+        workspaceCenter.addObserver(forName: NSWorkspace.sessionDidResignActiveNotification, object: nil, queue: nil) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.handleSessionResign() }
+        }
+        workspaceCenter.addObserver(forName: NSWorkspace.sessionDidBecomeActiveNotification, object: nil, queue: nil) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.handleSessionActive() }
+        }
 
-        workspaceCenter.addObserver(self, selector: #selector(handleWorkspaceAppChange), name: NSWorkspace.didActivateApplicationNotification, object: nil)
-        workspaceCenter.addObserver(self, selector: #selector(handleWorkspaceAppChange), name: NSWorkspace.didDeactivateApplicationNotification, object: nil)
-        workspaceCenter.addObserver(self, selector: #selector(handleWorkspaceAppChange), name: NSWorkspace.didHideApplicationNotification, object: nil)
-        workspaceCenter.addObserver(self, selector: #selector(handleWorkspaceAppChange), name: NSWorkspace.didUnhideApplicationNotification, object: nil)
-        workspaceCenter.addObserver(self, selector: #selector(handleWorkspaceAppChange), name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
-        workspaceCenter.addObserver(self, selector: #selector(handleWorkspaceAppChange), name: NSWorkspace.didLaunchApplicationNotification, object: nil)
-        workspaceCenter.addObserver(self, selector: #selector(handleWorkspaceAppChange), name: NSWorkspace.didTerminateApplicationNotification, object: nil)
+        workspaceCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: nil) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.handleWorkspaceAppChange() }
+        }
+        workspaceCenter.addObserver(forName: NSWorkspace.didDeactivateApplicationNotification, object: nil, queue: nil) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.handleWorkspaceAppChange() }
+        }
+        workspaceCenter.addObserver(forName: NSWorkspace.didHideApplicationNotification, object: nil, queue: nil) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.handleWorkspaceAppChange() }
+        }
+        workspaceCenter.addObserver(forName: NSWorkspace.didUnhideApplicationNotification, object: nil, queue: nil) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.handleWorkspaceAppChange() }
+        }
+        workspaceCenter.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: nil) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.handleWorkspaceAppChange() }
+        }
+        workspaceCenter.addObserver(forName: NSWorkspace.didLaunchApplicationNotification, object: nil, queue: nil) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.handleWorkspaceAppChange() }
+        }
+        workspaceCenter.addObserver(forName: NSWorkspace.didTerminateApplicationNotification, object: nil, queue: nil) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.handleWorkspaceAppChange() }
+        }
 
         let nc = NotificationCenter.default
-        nc.addObserver(self, selector: #selector(handleWorkspaceAppChange), name: NSWindow.didMiniaturizeNotification, object: nil)
-        nc.addObserver(self, selector: #selector(handleWorkspaceAppChange), name: NSWindow.didDeminiaturizeNotification, object: nil)
-        nc.addObserver(self, selector: #selector(handleWorkspaceAppChange), name: NSWindow.didResizeNotification, object: nil)
-        nc.addObserver(self, selector: #selector(handleWorkspaceAppChange), name: NSWindow.willCloseNotification, object: nil)
+        nc.addObserver(forName: NSWindow.didMiniaturizeNotification, object: nil, queue: nil) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.handleWorkspaceAppChange() }
+        }
+        nc.addObserver(forName: NSWindow.didDeminiaturizeNotification, object: nil, queue: nil) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.handleWorkspaceAppChange() }
+        }
+        nc.addObserver(forName: NSWindow.didResizeNotification, object: nil, queue: nil) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.handleWorkspaceAppChange() }
+        }
+        nc.addObserver(forName: NSWindow.willCloseNotification, object: nil, queue: nil) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.handleWorkspaceAppChange() }
+        }
 
         let distributedCenter = DistributedNotificationCenter.default()
-        distributedCenter.addObserver(self, selector: #selector(handleScreenLocked), name: Notification.Name("com.apple.screenIsLocked"), object: nil)
-        distributedCenter.addObserver(self, selector: #selector(handleScreenUnlocked), name: Notification.Name("com.apple.screenIsUnlocked"), object: nil)
+        distributedCenter.addObserver(forName: Notification.Name("com.apple.screenIsLocked"), object: nil, queue: nil) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.handleScreenLocked() }
+        }
+        distributedCenter.addObserver(forName: Notification.Name("com.apple.screenIsUnlocked"), object: nil, queue: nil) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.handleScreenUnlocked() }
+        }
 
-        nc.addObserver(
-            self,
-            selector: #selector(handlePowerStateDidChange),
-            name: Notification.Name.NSProcessInfoPowerStateDidChange,
-            object: nil
-        )
+        nc.addObserver(forName: Notification.Name.NSProcessInfoPowerStateDidChange, object: nil, queue: nil) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.handlePowerStateDidChange() }
+        }
     }
 
     private func setupBindings() {
@@ -120,26 +155,26 @@ public class PowerMonitor: ObservableObject {
     }
 
     private func startPeriodicChecks() {
-        let timer = Timer.scheduledTimer(withTimeInterval: 0.6, repeats: true) { [weak self] _ in
+        let timer = Timer.scheduledTimer(withTimeInterval: 2.5, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.timerTickCount += 1
-                if self.timerTickCount % 8 == 0 {
+                if self.timerTickCount % 6 == 0 {
                     self.refreshBatteryTelemetry()
                 }
                 self.evaluateState()
             }
         }
-        timer.tolerance = 0.2
+        timer.tolerance = 1.0
         checkTimer = timer
     }
 
-    @objc private func handleWillSleep() {
+    private func handleWillSleep() {
         isSystemSleeping = true
         evaluateState()
     }
 
-    @objc private func handleDidWake() {
+    private func handleDidWake() {
         isSystemSleeping = false
         isScreenSleeping = false
         refreshBatteryTelemetry()
@@ -147,24 +182,24 @@ public class PowerMonitor: ObservableObject {
         delegate?.powerMonitorDidUnlockOrWake()
     }
 
-    @objc private func handleScreensDidSleep() {
+    private func handleScreensDidSleep() {
         isScreenSleeping = true
         evaluateState()
     }
 
-    @objc private func handleScreensDidWake() {
+    private func handleScreensDidWake() {
         isScreenSleeping = false
         refreshBatteryTelemetry()
         evaluateState()
         delegate?.powerMonitorDidUnlockOrWake()
     }
 
-    @objc private func handleScreenLocked() {
+    private func handleScreenLocked() {
         isScreenLocked = true
         evaluateState()
     }
 
-    @objc private func handleScreenUnlocked() {
+    private func handleScreenUnlocked() {
         isScreenLocked = false
         isScreenSleeping = false
         isSystemSleeping = false
@@ -173,28 +208,26 @@ public class PowerMonitor: ObservableObject {
         delegate?.powerMonitorDidUnlockOrWake()
     }
 
-    @objc private func handleSessionResign() {
+    private func handleSessionResign() {
         isScreenLocked = true
         evaluateState()
     }
 
-    @objc private func handleSessionActive() {
+    private func handleSessionActive() {
         isScreenLocked = false
         refreshBatteryTelemetry()
         evaluateState()
         delegate?.powerMonitorDidUnlockOrWake()
     }
 
-    @objc private func handleWorkspaceAppChange() {
+    private func handleWorkspaceAppChange() {
         evaluateState()
     }
 
-    @objc private func handlePowerStateDidChange() {
-        DispatchQueue.main.async {
-            self.isLowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
-            self.refreshBatteryTelemetry()
-            self.evaluateState()
-        }
+    private func handlePowerStateDidChange() {
+        self.isLowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
+        self.refreshBatteryTelemetry()
+        self.evaluateState()
     }
 
     public func refreshBatteryTelemetry() {

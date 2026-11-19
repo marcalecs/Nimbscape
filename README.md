@@ -50,11 +50,11 @@ Native macOS live wallpaper app written in strict Swift 6 with zero third-party 
 
 Building locally via `build.sh` compiles `Nimbscape.app` natively for your Mac architecture (Apple Silicon or Intel) without macOS Gatekeeper quarantine prompts. Requires Xcode Command Line Tools (`xcode-select --install`).
 
-1. Download `Nimbscape-v1.0.1.zip` from [Releases](https://github.com/marcalecs/Nimbscape/releases/latest) and unzip it.
+1. Download `Nimbscape-v1.0.2.zip` from [Releases](https://github.com/marcalecs/Nimbscape/releases/latest) and unzip it.
 2. Open Terminal in the unzipped folder and run:
 
 ```bash
-cd ~/Downloads/Nimbscape-v1.0.1
+cd ~/Downloads/Nimbscape-v1.0.2
 chmod +x build.sh
 ./build.sh --install
 ```

@@ -117,7 +117,7 @@ public class WallpaperManager: ObservableObject, PowerMonitorDelegate {
     }
 
     private func startVisibilityWatchdog() {
-        let timer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
+        let timer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 guard !NSScreen.screens.isEmpty else { return }
@@ -129,10 +129,12 @@ public class WallpaperManager: ObservableObject, PowerMonitorDelegate {
                     return
                 }
                 let reattached = self.ensureAllWindowsVisible()
-                self.ensureActivePlaybackAlive(didReattach: reattached)
+                if reattached {
+                    self.ensureActivePlaybackAlive(didReattach: true)
+                }
             }
         }
-        timer.tolerance = 1.0
+        timer.tolerance = 2.0
         watchdogTimer = timer
     }
 
@@ -175,7 +177,7 @@ public class WallpaperManager: ObservableObject, PowerMonitorDelegate {
     }
 
     private func ensureActivePlaybackAlive(didReattach: Bool) {
-        guard !isWallpapersHidden, !isRAMFreed else { return }
+        guard !isWallpapersHidden, !isRAMFreed, !effectiveIsPaused else { return }
         if isPlayingEffectively && !isSlowStopping && !isSlowStopped {
             if let sharedPlayer = sharedVideoPlayer {
                 if sharedPlayer.rate == 0 || sharedPlayer.timeControlStatus == .paused {
