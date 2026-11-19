@@ -95,25 +95,20 @@ public class WallpaperManager: ObservableObject, PowerMonitorDelegate {
     }
 
     private func setupScreenNotifications() {
+        // Block-based observers hop onto the main actor explicitly: these notifications can be
+        // delivered off the main thread (display reconfiguration, wake), and @objc selectors on a
+        // @MainActor class trip Swift 6's isolation check (same SIGTRAP PowerMonitor hit in v1.0.1).
         NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(handleScreenChanges),
-            name: NSApplication.didChangeScreenParametersNotification,
-            object: nil
-        )
+            forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: nil
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.handleScreenChanges() }
+        }
         let ws = NSWorkspace.shared.notificationCenter
-        ws.addObserver(
-            self,
-            selector: #selector(handleActiveSpaceChange),
-            name: NSWorkspace.activeSpaceDidChangeNotification,
-            object: nil
-        )
-        ws.addObserver(
-            self,
-            selector: #selector(handleActiveSpaceChange),
-            name: NSWorkspace.didUnhideApplicationNotification,
-            object: nil
-        )
+        for name in [NSWorkspace.activeSpaceDidChangeNotification, NSWorkspace.didUnhideApplicationNotification] {
+            ws.addObserver(forName: name, object: nil, queue: nil) { [weak self] _ in
+                Task { @MainActor [weak self] in self?.handleActiveSpaceChange() }
+            }
+        }
     }
 
     private func startVisibilityWatchdog() {
@@ -138,7 +133,7 @@ public class WallpaperManager: ObservableObject, PowerMonitorDelegate {
         watchdogTimer = timer
     }
 
-    @objc private func handleActiveSpaceChange() {
+    private func handleActiveSpaceChange() {
         spaceRecoveryWorkItem?.cancel()
         let work = DispatchWorkItem { [weak self] in
             Task { @MainActor [weak self] in
@@ -347,7 +342,7 @@ public class WallpaperManager: ObservableObject, PowerMonitorDelegate {
             .store(in: &cancellables)
     }
 
-    @objc private func handleScreenChanges() {
+    private func handleScreenChanges() {
         let screens = NSScreen.screens
 
         guard !screens.isEmpty else { return }
