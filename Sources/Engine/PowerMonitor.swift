@@ -8,6 +8,9 @@ public struct PowerPolicyState: Equatable, Sendable {
     public var shouldMuteAudio: Bool
     public var isHardwareSleepOrLock: Bool
     public var pauseReason: String?
+    /// Displays (by `stableDisplayID`) paused because a window covers them while other displays keep
+    /// playing. Empty when nothing is covered or when the whole desktop is paused (`shouldPause`).
+    public var pausedDisplayIDs: Set<String> = []
 
     public static let running = PowerPolicyState(
         shouldPause: false,
@@ -16,6 +19,15 @@ public struct PowerPolicyState: Equatable, Sendable {
         isHardwareSleepOrLock: false,
         pauseReason: nil
     )
+}
+
+/// Windows found on each display by the occlusion scan, keyed by `NSScreen.stableDisplayID`.
+private struct WindowScan {
+    var fullscreenBundleIDs = Set<String>()
+    var fullscreenDisplays = Set<String>()
+    var maximizedDisplays = Set<String>()
+    var anyWindowDisplays = Set<String>()
+    var ownerNameByDisplay: [String: String] = [:]
 }
 
 @MainActor
@@ -152,6 +164,12 @@ public class PowerMonitor: ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.evaluateState() }
             .store(in: &cancellables)
+
+        preferences.$pauseOnBatteryBelowPercent
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.evaluateState() }
+            .store(in: &cancellables)
     }
 
     private func startPeriodicChecks() {
@@ -246,7 +264,8 @@ public class PowerMonitor: ObservableObject {
                     }
                 }
                 if let cap = desc[kIOPSCurrentCapacityKey as String] as? Int {
-                    level = cap
+                    let maxCap = (desc[kIOPSMaxCapacityKey as String] as? Int) ?? 100
+                    level = maxCap > 0 ? Int((Double(cap) / Double(maxCap) * 100).rounded()) : cap
                 }
             }
         }
@@ -257,12 +276,7 @@ public class PowerMonitor: ObservableObject {
         if self.isLowPowerMode != lowPower { self.isLowPowerMode = lowPower }
     }
 
-    private func inspectOnScreenWindows() -> (
-        fullscreenBundleIDs: Set<String>,
-        hasMaximizedCoveringDesktop: Bool,
-        hasAnyOpenWindow: Bool,
-        openWindowOwnerName: String?
-    ) {
+    private func inspectOnScreenWindows() -> WindowScan {
         let ownBundleID = Bundle.main.bundleIdentifier
         let ignoredSystemBundles: Set<String> = [
             "com.apple.dock",
@@ -289,13 +303,10 @@ public class PowerMonitor: ObservableObject {
         }
 
         let screens = NSScreen.screens
-        var fullscreenBundleIDs = Set<String>()
-        var hasMaximized = false
-        var hasAnyOpenWindow = false
-        var firstWindowOwner: String? = nil
+        var scan = WindowScan()
 
         guard let windowList = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else {
-            return (fullscreenBundleIDs, false, false, nil)
+            return scan
         }
 
         for info in windowList {
@@ -325,31 +336,55 @@ public class PowerMonitor: ObservableObject {
             }
 
             let ownerName = (info[kCGWindowOwnerName as String] as? String) ?? bundleID
+            guard let screen = Self.screen(containing: bounds, in: screens) else { continue }
+            let displayID = screen.stableDisplayID
             var windowIsMaximized = false
 
-            for screen in screens {
-                if abs(bounds.width - screen.frame.width) <= 6 && abs(bounds.height - screen.frame.height) <= 6 {
-                    fullscreenBundleIDs.insert(bundleID)
-                    windowIsMaximized = true
-                }
+            if abs(bounds.width - screen.frame.width) <= 6 && abs(bounds.height - screen.frame.height) <= 6 {
+                scan.fullscreenBundleIDs.insert(bundleID)
+                scan.fullscreenDisplays.insert(displayID)
+                windowIsMaximized = true
+            }
 
-                let visibleArea = max(1, screen.visibleFrame.width * screen.visibleFrame.height)
-                let winArea = bounds.width * bounds.height
-                if winArea / visibleArea >= 0.75 {
-                    hasMaximized = true
-                    windowIsMaximized = true
-                }
+            let visibleArea = max(1, screen.visibleFrame.width * screen.visibleFrame.height)
+            let coveredArea = Self.cgRect(of: screen).intersection(bounds)
+            if !coveredArea.isNull, (coveredArea.width * coveredArea.height) / visibleArea >= 0.75 {
+                scan.maximizedDisplays.insert(displayID)
+                windowIsMaximized = true
             }
 
             if bundleID != ownBundleID || windowIsMaximized {
-                hasAnyOpenWindow = true
-                if firstWindowOwner == nil {
-                    firstWindowOwner = ownerName
+                scan.anyWindowDisplays.insert(displayID)
+                if scan.ownerNameByDisplay[displayID] == nil {
+                    scan.ownerNameByDisplay[displayID] = ownerName
                 }
             }
         }
 
-        return (fullscreenBundleIDs, hasMaximized, hasAnyOpenWindow, firstWindowOwner)
+        return scan
+    }
+
+    /// Screen frame in CoreGraphics window coordinates (origin top-left of the primary display).
+    private static func cgRect(of screen: NSScreen) -> CGRect {
+        let primaryHeight = NSScreen.screens.first?.frame.height ?? screen.frame.height
+        return CGRect(
+            x: screen.frame.minX,
+            y: primaryHeight - screen.frame.maxY,
+            width: screen.frame.width,
+            height: screen.frame.height
+        )
+    }
+
+    /// The screen a window (in CG coordinates) mostly sits on.
+    private static func screen(containing windowBounds: CGRect, in screens: [NSScreen]) -> NSScreen? {
+        var best: (screen: NSScreen, area: CGFloat)?
+        for screen in screens {
+            let overlap = cgRect(of: screen).intersection(windowBounds)
+            guard !overlap.isNull else { continue }
+            let area = overlap.width * overlap.height
+            if area > (best?.area ?? 0) { best = (screen, area) }
+        }
+        return best?.screen
     }
 
     public func evaluateState() {
@@ -416,54 +451,45 @@ public class PowerMonitor: ObservableObject {
 
         let ruleMutesAudio = (ruleEval?.action == .muteAudio)
 
+        // Window-based pauses are decided per display: only displays a window covers pause, the
+        // others keep playing. If every display is covered, the whole desktop pauses as before.
+        let coveredDisplays: Set<String>
+        let coverLabel: String
         switch preferences.windowPauseMode {
         case .anyWindow:
-            if windowScan.hasAnyOpenWindow || !windowScan.fullscreenBundleIDs.isEmpty {
-                let label = windowScan.openWindowOwnerName.map { "\($0) Open" } ?? "Window Open"
-                applyPolicy(
-                    PowerPolicyState(
-                        shouldPause: true,
-                        shouldStopAndFreeRAM: false,
-                        shouldMuteAudio: ruleMutesAudio,
-                        isHardwareSleepOrLock: false,
-                        pauseReason: label
-                    ),
-                    ruleMatch: ruleEval
-                )
-                return
-            }
+            coveredDisplays = windowScan.anyWindowDisplays.union(windowScan.fullscreenDisplays)
+            coverLabel = "Window Open"
         case .maximizedOrFullscreen:
-            if !windowScan.fullscreenBundleIDs.isEmpty || windowScan.hasMaximizedCoveringDesktop {
-                let label = !windowScan.fullscreenBundleIDs.isEmpty ? "Fullscreen App" : "Maximized Window"
-                applyPolicy(
-                    PowerPolicyState(
-                        shouldPause: true,
-                        shouldStopAndFreeRAM: false,
-                        shouldMuteAudio: ruleMutesAudio,
-                        isHardwareSleepOrLock: false,
-                        pauseReason: label
-                    ),
-                    ruleMatch: ruleEval
-                )
-                return
-            }
+            coveredDisplays = windowScan.maximizedDisplays.union(windowScan.fullscreenDisplays)
+            coverLabel = windowScan.fullscreenDisplays.isEmpty ? "Maximized Window" : "Fullscreen App"
         case .fullscreenOnly:
-            if !windowScan.fullscreenBundleIDs.isEmpty {
-                applyPolicy(
-                    PowerPolicyState(
-                        shouldPause: true,
-                        shouldStopAndFreeRAM: false,
-                        shouldMuteAudio: ruleMutesAudio,
-                        isHardwareSleepOrLock: false,
-                        pauseReason: "Fullscreen App"
-                    ),
-                    ruleMatch: ruleEval
-                )
-                return
-            }
+            coveredDisplays = windowScan.fullscreenDisplays
+            coverLabel = "Fullscreen App"
         case .never:
-            break
+            coveredDisplays = []
+            coverLabel = ""
         }
+
+        let allDisplays = Set(NSScreen.screens.map { $0.stableDisplayID })
+        if !coveredDisplays.isEmpty && allDisplays.isSubset(of: coveredDisplays) {
+            var label = coverLabel
+            if preferences.windowPauseMode == .anyWindow, allDisplays.count == 1,
+               let owner = windowScan.ownerNameByDisplay.values.first {
+                label = "\(owner) Open"
+            }
+            applyPolicy(
+                PowerPolicyState(
+                    shouldPause: true,
+                    shouldStopAndFreeRAM: false,
+                    shouldMuteAudio: ruleMutesAudio,
+                    isHardwareSleepOrLock: false,
+                    pauseReason: label
+                ),
+                ruleMatch: ruleEval
+            )
+            return
+        }
+        let partiallyPausedDisplays = coveredDisplays.intersection(allDisplays)
 
         if !overrideSystemPause {
             if preferences.pauseOnLowPowerMode && isLowPowerMode {
@@ -480,14 +506,15 @@ public class PowerMonitor: ObservableObject {
                 return
             }
 
-            if preferences.pauseOnBattery && isOnBattery {
+            if preferences.pauseOnBattery && isOnBattery
+                && (batteryLevel ?? 0) <= preferences.pauseOnBatteryBelowPercent {
                 applyPolicy(
                     PowerPolicyState(
                         shouldPause: true,
                         shouldStopAndFreeRAM: false,
                         shouldMuteAudio: ruleMutesAudio,
                         isHardwareSleepOrLock: false,
-                        pauseReason: "Battery Mode"
+                        pauseReason: "Battery Below \(preferences.pauseOnBatteryBelowPercent)%"
                     ),
                     ruleMatch: ruleEval
                 )
@@ -501,7 +528,10 @@ public class PowerMonitor: ObservableObject {
                 shouldStopAndFreeRAM: false,
                 shouldMuteAudio: ruleMutesAudio,
                 isHardwareSleepOrLock: false,
-                pauseReason: nil
+                pauseReason: partiallyPausedDisplays.isEmpty
+                    ? nil
+                    : "\(coverLabel) · \(partiallyPausedDisplays.count) of \(allDisplays.count) Displays Paused",
+                pausedDisplayIDs: partiallyPausedDisplays
             ),
             ruleMatch: ruleEval
         )

@@ -174,12 +174,12 @@ public class WallpaperManager: ObservableObject, PowerMonitorDelegate {
     private func ensureActivePlaybackAlive(didReattach: Bool) {
         guard !isWallpapersHidden, !isRAMFreed, !effectiveIsPaused else { return }
         if isPlayingEffectively && !isSlowStopping && !isSlowStopped {
-            if let sharedPlayer = sharedVideoPlayer {
+            if let sharedPlayer = sharedVideoPlayer, !isSharedPlayerPaused {
                 if sharedPlayer.rate == 0 || sharedPlayer.timeControlStatus == .paused {
                     sharedPlayer.rate = sharedVideoSpeed
                 }
             }
-            for id in orderedDisplayIDs {
+            for id in orderedDisplayIDs where !isDisplayPausedByPolicy(id) {
                 slotsByDisplayID[id]?.videoView?.ensurePlayingIfExpected()
                 if didReattach {
                     slotsByDisplayID[id]?.webView?.recoverAfterWake()
@@ -411,6 +411,20 @@ public class WallpaperManager: ObservableObject, PowerMonitorDelegate {
         AppPreferences.shared.isPaused || isSlowStopped || isWallpapersHidden || currentPolicy.shouldPause || currentPolicy.shouldStopAndFreeRAM
     }
 
+    /// Paused because a window covers only this display (other displays keep playing).
+    private func isDisplayPausedByPolicy(_ id: String) -> Bool {
+        currentPolicy.pausedDisplayIDs.contains(id)
+    }
+
+    private func isSlotPaused(_ id: String) -> Bool {
+        effectiveIsPaused || isDisplayPausedByPolicy(id)
+    }
+
+    /// The shared Clone/Stretch player keeps decoding while at least one display shows it.
+    private var isSharedPlayerPaused: Bool {
+        effectiveIsPaused || orderedDisplayIDs.allSatisfy { isDisplayPausedByPolicy($0) }
+    }
+
     private var effectiveIsMuted: Bool {
         let muteExternal = AppPreferences.shared.muteOnExternalAudio && AudioVisualizerEngine.shared.isExternalAudioPlaying
         return AppPreferences.shared.isMuted || currentPolicy.shouldMuteAudio || muteExternal
@@ -480,6 +494,7 @@ public class WallpaperManager: ObservableObject, PowerMonitorDelegate {
             let isPrimaryAudioScreen = (id == mainID)
             let slotMuted = muted || !isPrimaryAudioScreen
             let frame = contentView.bounds
+            let paused = paused || isDisplayPausedByPolicy(id)
 
             slot.wallpaperID = item.id
 
@@ -565,7 +580,7 @@ public class WallpaperManager: ObservableObject, PowerMonitorDelegate {
             self.sharedVideoLooper = looper
             self.sharedVideoWallpaperID = item.id
 
-            if !paused {
+            if !isSharedPlayerPaused {
                 player.rate = self.sharedVideoSpeed
             }
         }
@@ -593,6 +608,7 @@ public class WallpaperManager: ObservableObject, PowerMonitorDelegate {
 
             let isPrimaryAudioScreen = (id == mainID)
             let slotMuted = muted || !isPrimaryAudioScreen
+            let paused = paused || isDisplayPausedByPolicy(id)
             slot.wallpaperID = item.id
 
             switch item.type {
@@ -657,7 +673,7 @@ public class WallpaperManager: ObservableObject, PowerMonitorDelegate {
 
         if sharedVideoWallpaperID == wallpaperID, let player = sharedVideoPlayer {
             sharedVideoSpeed = max(0.25, min(2.0, properties.speed))
-            if !effectiveIsPaused {
+            if !isSharedPlayerPaused {
                 player.rate = sharedVideoSpeed
             }
         }
@@ -727,10 +743,11 @@ public class WallpaperManager: ObservableObject, PowerMonitorDelegate {
         }
 
         let paused = effectiveIsPaused
-        isPlayingEffectively = !paused && !isRAMFreed
+        let anyDisplayPlaying = orderedDisplayIDs.contains { !isSlotPaused($0) }
+        isPlayingEffectively = !paused && anyDisplayPlaying && !isRAMFreed
 
         if let sharedPlayer = sharedVideoPlayer {
-            if paused {
+            if isSharedPlayerPaused {
                 sharedPlayer.pause()
             } else {
                 sharedPlayer.rate = sharedVideoSpeed
@@ -739,7 +756,7 @@ public class WallpaperManager: ObservableObject, PowerMonitorDelegate {
 
         for id in orderedDisplayIDs {
             guard let slot = slotsByDisplayID[id] else { continue }
-            if paused {
+            if isSlotPaused(id) {
                 slot.videoView?.pause()
                 slot.webView?.pause()
                 slot.imageView?.pause()

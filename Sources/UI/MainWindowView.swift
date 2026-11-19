@@ -719,6 +719,26 @@ public struct MainWindowView: View {
                         Divider()
 
                         Toggle("Pause on Battery Power", isOn: $preferences.pauseOnBattery)
+                        HStack(spacing: 10) {
+                            Text("Only When Battery at or Below")
+                            Slider(
+                                value: Binding(
+                                    get: { Double(preferences.pauseOnBatteryBelowPercent) },
+                                    set: { preferences.pauseOnBatteryBelowPercent = Int($0) }
+                                ),
+                                in: 5...100,
+                                step: 5
+                            )
+                            Text(preferences.pauseOnBatteryBelowPercent >= 100 ? "Always" : "\(preferences.pauseOnBatteryBelowPercent)%")
+                                .font(.system(size: 11, design: .monospaced))
+                                .frame(width: 48, alignment: .trailing)
+                        }
+                        .disabled(!preferences.pauseOnBattery)
+                        if power.isOnBattery, let level = power.batteryLevel {
+                            Text("On battery · \(level)%")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                         Toggle("Pause in macOS Low Power Mode", isOn: $preferences.pauseOnLowPowerMode)
                         Toggle("Manual Battery Override (Resume Anyway)", isOn: $power.overrideSystemPause)
 
