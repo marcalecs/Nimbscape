@@ -1,0 +1,11 @@
+<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;height:100%;background:transparent;overflow:hidden;font-family:-apple-system,"SF Pro Rounded",system-ui;color:#fff;-webkit-user-select:none;cursor:default}
+.card{box-sizing:border-box;width:100%;height:100%;border-radius:22px;background:rgba(18,18,22,.42);border:1px solid rgba(255,255,255,.14);display:flex;flex-direction:column;align-items:center;justify-content:center;text-shadow:0 1px 3px rgba(0,0,0,.4)}
+canvas{width:150px;height:150px}</style></head><body><div class="card"><canvas id="c" width="300" height="300"></canvas></div><script>
+const c=document.getElementById('c'),x=c.getContext('2d');
+function hand(a,l,w,col){x.save();x.rotate(a);x.beginPath();x.moveTo(0,18);x.lineTo(0,-l);x.lineWidth=w;x.lineCap='round';x.strokeStyle=col;x.stroke();x.restore();}
+function draw(){const d=new Date(),ms=d.getMilliseconds(),s=d.getSeconds()+ms/1000,m=d.getMinutes()+s/60,h=d.getHours()%12+m/60;
+x.clearRect(0,0,300,300);x.save();x.translate(150,150);
+for(let i=0;i<60;i++){x.save();x.rotate(i*Math.PI/30);x.beginPath();x.moveTo(0,-128);x.lineTo(0,i%5?-122:-110);x.lineWidth=i%5?2:5;x.strokeStyle='rgba(255,255,255,'+(i%5?.45:.9)+')';x.lineCap='round';x.stroke();x.restore();}
+hand(h*Math.PI/6,70,9,'#fff');hand(m*Math.PI/30,100,6,'#fff');hand(s*Math.PI/30,112,2.5,'#ff9f0a');
+x.beginPath();x.arc(0,0,7,0,7);x.fillStyle='#ff9f0a';x.fill();x.restore();requestAnimationFrame(draw);}
+draw();</script></body></html>

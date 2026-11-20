@@ -1,0 +1,7 @@
+<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;height:100%;background:transparent;overflow:hidden;font-family:-apple-system,"SF Pro Rounded",system-ui;color:#fff;-webkit-user-select:none;cursor:default}
+.card{box-sizing:border-box;width:100%;height:100%;border-radius:22px;background:rgba(18,18,22,.42);border:1px solid rgba(255,255,255,.14);display:flex;flex-direction:column;align-items:center;justify-content:center;text-shadow:0 1px 3px rgba(0,0,0,.4)}
+.card{padding:16px 22px;align-items:flex-start}.q{font-size:15px;line-height:1.35;font-weight:500}.a{font-size:12px;opacity:.7;margin-top:8px}</style></head>
+<body><div class="card"><div class="q" id="q"></div><div class="a" id="a"></div></div><script>
+const quotes=[["Simplicity is the ultimate sophistication.","Leonardo da Vinci"],["Well done is better than well said.","Benjamin Franklin"],["Stay hungry, stay foolish.","Stewart Brand"],["The best way out is always through.","Robert Frost"],["What we think, we become.","Buddha"],["Make it work, make it right, make it fast.","Kent Beck"],["Less, but better.","Dieter Rams"]];
+const day=Math.floor(Date.now()/86400000),[q,a]=quotes[day%quotes.length];
+document.getElementById('q').textContent='“'+q+'”';document.getElementById('a').textContent='— '+a;</script></body></html>

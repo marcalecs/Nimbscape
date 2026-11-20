@@ -10,6 +10,7 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
 
         WallpaperManager.shared.start()
         StorageJanitor.cleanupOnLaunch()
+        WidgetDataHub.shared.start()
 
         _ = PlaylistStore.shared
         _ = ScreensaverEngine.shared

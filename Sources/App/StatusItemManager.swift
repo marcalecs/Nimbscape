@@ -97,6 +97,10 @@ public class StatusItemManager: NSObject {
         switcherItem.target = self
         menu.addItem(switcherItem)
 
+        let customizeItem = NSMenuItem(title: "Customize Wallpaper…", action: #selector(customizeWallpaper), keyEquivalent: "")
+        customizeItem.target = self
+        menu.addItem(customizeItem)
+
         menu.addItem(NSMenuItem.separator())
 
         let playPauseItem = NSMenuItem(
@@ -178,6 +182,10 @@ public class StatusItemManager: NSObject {
 
     @objc public func openGallery() {
         openMainWindow()
+    }
+
+    @objc private func customizeWallpaper() {
+        OverlayController.shared.beginEditing()
     }
 
     @objc private func openQuickSwitcher() {
