@@ -14,6 +14,17 @@ extension WallpaperManager {
         return dir
     }
 
+    /// Writing a still frame into the system wallpaper would replace the lock-screen video, so
+    /// syncing pauses while Nimbscape's video is on the lock screen.
+    var shouldSyncSystemWallpaper: Bool {
+        AppPreferences.shared.syncLockScreenWallpaper && !LockScreenVideo.shared.isActive
+    }
+
+    /// Re-syncs (or stops syncing) after the lock-screen video was installed or removed.
+    public func refreshLockScreenSyncAfterLockVideoChange() {
+        if shouldSyncSystemWallpaper { syncAllDisplaysToLockScreen() }
+    }
+
     public func syncAllDisplaysToLockScreen() {
         let store = WallpaperStore.shared
         for id in orderedDisplayIDs {
@@ -26,7 +37,7 @@ extension WallpaperManager {
 
     func syncSlotToLockScreen(displayID: String, item: WallpaperItem) {
         guard let slot = slotsByDisplayID[displayID] else { return }
-        let shouldSyncSystem = AppPreferences.shared.syncLockScreenWallpaper
+        let shouldSyncSystem = shouldSyncSystemWallpaper
         let props = item.properties
 
         switch item.type {
@@ -73,7 +84,7 @@ extension WallpaperManager {
                         webView.captureSnapshot { [weak self] snapshot in
                             guard let self, let snapshot else { return }
                             self.slotsByDisplayID[displayID]?.window.setBackdropImage(snapshot)
-                            guard AppPreferences.shared.syncLockScreenWallpaper,
+                            guard self.shouldSyncSystemWallpaper,
                                   let tiffData = snapshot.tiffRepresentation else { return }
                             Task.detached(priority: .utility) {
                                 if let savedURL = Self.saveSyncPNG(tiffData: tiffData, key: "\(wallpaperID)_\(displayID)") {
@@ -118,11 +129,11 @@ extension WallpaperManager {
     }
 
     func scheduleIdleAndSpacesStoreSync() {
-        guard AppPreferences.shared.syncLockScreenWallpaper else { return }
+        guard shouldSyncSystemWallpaper else { return }
         idleStoreSyncWorkItem?.cancel()
         let work = DispatchWorkItem { [weak self] in
             Task { @MainActor [weak self] in
-                guard let self, AppPreferences.shared.syncLockScreenWallpaper else { return }
+                guard let self, self.shouldSyncSystemWallpaper else { return }
                 let entries = self.syncedLockScreenEntries
                 guard !entries.isEmpty else { return }
                 let primaryID = self.orderedDisplayIDs.first ?? entries.keys.sorted().first ?? ""
