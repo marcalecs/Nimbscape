@@ -63,6 +63,10 @@ public class WallpaperManager: ObservableObject, PowerMonitorDelegate {
     private var lastMousePushTime: CFAbsoluteTime = 0
 
     private var currentPolicy: PowerPolicyState = .running
+    /// Set when a wallpaper window became visible while the desktop was paused only because windows
+    /// covered it (typically mid Space swipe from a fullscreen app). Playback resumes at once instead
+    /// of waiting for the swipe to end; the next settled policy evaluation clears it.
+    private var isResumedByVisibility: Bool = false
     private var isRAMFreed: Bool = false
     private var reloadScheduled: Bool = false
     private var cancellables = Set<AnyCancellable>()
@@ -102,6 +106,12 @@ public class WallpaperManager: ObservableObject, PowerMonitorDelegate {
             forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: nil
         ) { [weak self] _ in
             Task { @MainActor [weak self] in self?.handleScreenChanges() }
+        }
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.didChangeOcclusionStateNotification, object: nil, queue: nil
+        ) { [weak self] note in
+            let window = note.object as? NSWindow
+            Task { @MainActor [weak self] in self?.handleOcclusionChange(of: window) }
         }
         let ws = NSWorkspace.shared.notificationCenter
         for name in [NSWorkspace.activeSpaceDidChangeNotification, NSWorkspace.didUnhideApplicationNotification] {
@@ -332,6 +342,15 @@ public class WallpaperManager: ObservableObject, PowerMonitorDelegate {
             }
             .store(in: &cancellables)
 
+        Publishers.CombineLatest(PowerMonitor.shared.$isLowPowerMode, preferences.$pauseOnLowPowerMode)
+            .dropFirst()
+            .removeDuplicates { $0 == $1 }
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.reapplyAllProperties()
+            }
+            .store(in: &cancellables)
+
         preferences.$syncLockScreenWallpaper
             .dropFirst()
             .receive(on: DispatchQueue.main)
@@ -409,7 +428,140 @@ public class WallpaperManager: ObservableObject, PowerMonitorDelegate {
     }
 
     private var effectiveIsPaused: Bool {
-        AppPreferences.shared.isPaused || isSlowStopped || isWallpapersHidden || currentPolicy.shouldPause || currentPolicy.shouldStopAndFreeRAM
+        let policyPaused = currentPolicy.shouldPause && !(currentPolicy.isWindowCoverPause && isResumedByVisibility)
+        return AppPreferences.shared.isPaused || isSlowStopped || isWallpapersHidden || policyPaused || currentPolicy.shouldStopAndFreeRAM
+    }
+
+    private func handleOcclusionChange(of window: NSWindow?) {
+        guard let window, window.occlusionState.contains(.visible),
+              slotsByDisplayID.values.contains(where: { $0.window === window }),
+              currentPolicy.shouldPause, currentPolicy.isWindowCoverPause,
+              !isResumedByVisibility, !AppPreferences.shared.isPaused, !isWallpapersHidden
+        else { return }
+        isResumedByVisibility = true
+        triggerFadeResume()
+    }
+
+    public func powerMonitorDidSettleAfterSpaceChange() {
+        guard isResumedByVisibility else { return }
+        isResumedByVisibility = false
+        // Policy unchanged (still covered): the user landed on a covered desktop, so ease back down.
+        if effectiveIsPaused {
+            triggerFadeStop()
+        } else {
+            updatePlaybackAndAudioState()
+        }
+    }
+
+    // MARK: - Still-frame cross-fade (smooth stop / start)
+
+    private static let fadeDuration: TimeInterval = 0.6
+    private var fadeOutWork: DispatchWorkItem?
+    private var isFadingOut: Bool = false
+
+    /// Video slots and the player each one renders.
+    private var videoSlotPlayers: [(id: String, view: VideoWallpaperView, player: AVQueuePlayer)] {
+        orderedDisplayIDs.compactMap { id in
+            guard let view = slotsByDisplayID[id]?.videoView, let player = view.renderedPlayer else { return nil }
+            return (id, view, player)
+        }
+    }
+
+    /// Grabs the frame each video player shows right now (one capture per player).
+    private func captureStills(_ completion: @escaping @MainActor ([ObjectIdentifier: CGImage]) -> Void) {
+        var players: [ObjectIdentifier: AVQueuePlayer] = [:]
+        for entry in videoSlotPlayers { players[ObjectIdentifier(entry.player)] = entry.player }
+        guard !players.isEmpty else {
+            completion([:])
+            return
+        }
+        let maxSize = NSScreen.screens.reduce(CGSize.zero) { size, screen in
+            let scale = screen.backingScaleFactor
+            return CGSize(width: max(size.width, screen.frame.width * scale), height: max(size.height, screen.frame.height * scale))
+        }
+        final class Box: @unchecked Sendable { var images: [ObjectIdentifier: CGImage] = [:]; var remaining = 0 }
+        let box = Box()
+        box.remaining = players.count
+        for (key, player) in players {
+            guard let item = player.currentItem else {
+                box.remaining -= 1
+                continue
+            }
+            let generator = AVAssetImageGenerator(asset: item.asset)
+            generator.appliesPreferredTrackTransform = true
+            generator.requestedTimeToleranceBefore = .zero
+            generator.requestedTimeToleranceAfter = .zero
+            generator.maximumSize = maxSize
+            generator.generateCGImageAsynchronously(for: item.currentTime()) { image, _, _ in
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated {
+                        if let image { box.images[key] = image }
+                        box.remaining -= 1
+                        if box.remaining == 0 { completion(box.images) }
+                    }
+                }
+            }
+        }
+        if box.remaining == 0 { completion(box.images) }
+    }
+
+    /// Pause with a cross-fade: the current frame fades in over the still-moving video, then
+    /// playback stops underneath it. Web/image wallpapers use their own slow-stop.
+    private func triggerFadeStop() {
+        cancelFadeOut()
+        guard !videoSlotPlayers.isEmpty else {
+            triggerSlowStop(duration: AppPreferences.shared.slowStopDuration, markManualSettled: false)
+            return
+        }
+        isFadingOut = true
+        captureStills { [weak self] images in
+            guard let self, self.isFadingOut else { return }
+            for entry in self.videoSlotPlayers {
+                if let image = images[ObjectIdentifier(entry.player)] {
+                    entry.view.showStill(image, fadeDuration: Self.fadeDuration)
+                }
+            }
+            let work = DispatchWorkItem { [weak self] in
+                Task { @MainActor [weak self] in
+                    guard let self, self.isFadingOut else { return }
+                    self.isFadingOut = false
+                    self.updatePlaybackAndAudioState()
+                }
+            }
+            self.fadeOutWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.fadeDuration, execute: work)
+        }
+    }
+
+    private func cancelFadeOut() {
+        isFadingOut = false
+        fadeOutWork?.cancel()
+        fadeOutWork = nil
+    }
+
+    /// Resume with a cross-fade: a still of the paused frame covers the video, playback starts
+    /// underneath (hiding the decoder warm-up), then the still fades away.
+    private func triggerFadeResume() {
+        cancelFadeOut()
+        cancelSlowStop()
+        let entries = videoSlotPlayers
+        let start: @MainActor () -> Void = { [weak self] in
+            guard let self else { return }
+            // Starts playback under the still; updatePlaybackAndAudioState then fades the still away.
+            self.updatePlaybackAndAudioState()
+        }
+        if entries.allSatisfy({ $0.view.isShowingStill }) {
+            start()
+            return
+        }
+        captureStills { images in
+            for entry in entries where !entry.view.isShowingStill {
+                if let image = images[ObjectIdentifier(entry.player)] {
+                    entry.view.showStill(image, fadeDuration: 0)
+                }
+            }
+            start()
+        }
     }
 
     /// Paused because a window covers only this display (other displays keep playing).
@@ -424,6 +576,12 @@ public class WallpaperManager: ObservableObject, PowerMonitorDelegate {
     /// The shared Clone/Stretch player keeps decoding while at least one display shows it.
     private var isSharedPlayerPaused: Bool {
         effectiveIsPaused || orderedDisplayIDs.allSatisfy { isDisplayPausedByPolicy($0) }
+    }
+
+    /// The user's FPS cap, lowered to 30 while macOS Low Power Mode throttling is active.
+    private var effectiveFPSCap: Int {
+        let cap = AppPreferences.shared.globalFPSCap
+        return PowerMonitor.shared.isLowPowerThrottled ? min(cap, 30) : cap
     }
 
     private var effectiveIsMuted: Bool {
@@ -458,7 +616,7 @@ public class WallpaperManager: ObservableObject, PowerMonitorDelegate {
 
         let store = WallpaperStore.shared
         let mode = store.displayLayoutMode
-        let globalFPS = AppPreferences.shared.globalFPSCap
+        let globalFPS = effectiveFPSCap
 
         switch mode {
         case .perDisplay:
@@ -670,7 +828,7 @@ public class WallpaperManager: ObservableObject, PowerMonitorDelegate {
     }
 
     public func applyLiveProperties(_ properties: WallpaperProperties, forWallpaperID wallpaperID: String) {
-        let globalFPS = AppPreferences.shared.globalFPSCap
+        let globalFPS = effectiveFPSCap
 
         if sharedVideoWallpaperID == wallpaperID, let player = sharedVideoPlayer {
             sharedVideoSpeed = max(0.25, min(2.0, properties.speed))
@@ -735,9 +893,10 @@ public class WallpaperManager: ObservableObject, PowerMonitorDelegate {
             slot.webView?.setVolume(volume)
         }
 
-        if isSlowStopping {
+        if isSlowStopping || isFadingOut {
             if currentPolicy.shouldStopAndFreeRAM {
                 cancelSlowStop()
+                cancelFadeOut()
             } else {
                 return
             }
@@ -763,6 +922,7 @@ public class WallpaperManager: ObservableObject, PowerMonitorDelegate {
                 slot.imageView?.pause()
             } else {
                 slot.videoView?.play()
+                slot.videoView?.hideStill(fadeDuration: Self.fadeDuration)
                 slot.webView?.play()
                 slot.imageView?.play()
             }
@@ -780,6 +940,7 @@ public class WallpaperManager: ObservableObject, PowerMonitorDelegate {
     }
 
     public func triggerSlowStop(duration: Double, markManualSettled: Bool = true) {
+        cancelFadeOut()
         let duration = max(0.5, min(10.0, duration))
         slowStopTimer?.invalidate()
         slowStopTimer = nil
@@ -895,6 +1056,10 @@ public class WallpaperManager: ObservableObject, PowerMonitorDelegate {
     }
 
     public func powerMonitorDidUpdatePolicy(_ state: PowerPolicyState) {
+        let wasResumedByVisibility = isResumedByVisibility
+        if !(state.shouldPause && state.isWindowCoverPause) {
+            isResumedByVisibility = false
+        }
         let wasStoppedRAM = currentPolicy.shouldStopAndFreeRAM
         let wasPausedByPolicy = currentPolicy.shouldPause
         currentPolicy = state
@@ -917,7 +1082,7 @@ public class WallpaperManager: ObservableObject, PowerMonitorDelegate {
                 && AppPreferences.shared.smoothSlowStop
                 && !AppPreferences.shared.isPaused
                 && !isSlowStopped {
-                triggerSlowStop(duration: AppPreferences.shared.slowStopDuration, markManualSettled: false)
+                triggerFadeStop()
                 return
             }
             cancelSlowStop()
@@ -926,10 +1091,11 @@ public class WallpaperManager: ObservableObject, PowerMonitorDelegate {
         }
 
         if wasPausedByPolicy && !state.shouldPause {
-            if isSlowStopping {
-                cancelSlowStop()
+            if wasResumedByVisibility && !isFadingOut {
+                // Already playing since the wallpaper came into view mid-swipe.
+                return
             }
-            updatePlaybackAndAudioState()
+            triggerFadeResume()
             return
         }
 

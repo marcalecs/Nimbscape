@@ -30,3 +30,8 @@
 ## Power & Multi-Display Pausing
 - *(2026-11-20)* Battery pause is threshold-based: `pauseOnBatteryBelowPercent` (default 20%, 100% keeps the old always-pause behavior). Battery level is computed as current/max capacity.
 - *(2026-11-20)* Window-occlusion pauses are per display. `PowerMonitor` maps each on-screen window to the display it mostly overlaps (CG ↔ AppKit coordinate flip) and reports covered displays in `PowerPolicyState.pausedDisplayIDs`; only when every display is covered does it raise the global `shouldPause` (keeping the slow-stop ramp). In Clone/Stretch the shared `AVQueuePlayer` keeps decoding while any display is uncovered.
+
+## Smooth Stop / Start
+- *(2026-11-20)* Policy pauses and resumes of video wallpapers cross-fade through a still frame (0.6 s) instead of ramping `AVPlayer.rate`: frequent rate changes produced visible hitches. The still is captured with `AVAssetImageGenerator` at the current time; on resume playback starts under it, hiding decoder warm-up. Web/image wallpapers keep their own slow-stop.
+- *(2026-11-20)* A window-cover pause is lifted the moment a wallpaper window reports `occlusionState.visible` (start of a Space swipe); the settled evaluation after the swipe re-pauses if the user landed on a covered desktop.
+- *(2026-11-20)* macOS Low Power Mode no longer pauses wallpapers; it caps them at 30 FPS (`isLowPowerThrottled`).

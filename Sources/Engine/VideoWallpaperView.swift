@@ -10,6 +10,15 @@ public class VideoWallpaperView: NSView {
     private var playbackSpeed: Float = 1.0
     private var isCurrentlyPaused: Bool = false
     private var currentProperties: WallpaperProperties = .default
+    /// Still frame shown over the video while it is paused; cross-fading it in and out makes
+    /// stop/start transitions smooth and hides the decoder warm-up when playback resumes.
+    private var stillLayer: CALayer?
+
+    /// The player this view renders (its own or the shared Clone/Stretch player).
+    public var renderedPlayer: AVQueuePlayer? { queuePlayer }
+
+    /// Whether a still frame currently covers the video (fully or while fading).
+    public var isShowingStill: Bool { stillLayer != nil }
 
     public override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -183,6 +192,7 @@ public class VideoWallpaperView: NSView {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         playerLayer?.frame = self.bounds
+        stillLayer?.frame = self.bounds
         CATransaction.commit()
     }
 
@@ -204,6 +214,68 @@ public class VideoWallpaperView: NSView {
         }
     }
 
+    // MARK: - Still-frame cross-fade
+
+    /// Fades `image` in over the video. With `duration` 0 the still appears at once.
+    public func showStill(_ image: CGImage, fadeDuration duration: TimeInterval) {
+        let still = stillLayer ?? CALayer()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        still.contents = image
+        still.frame = bounds
+        still.contentsGravity = stillGravity(for: currentProperties.alignment)
+        still.masksToBounds = true
+        if stillLayer == nil {
+            still.opacity = 0
+            layer?.addSublayer(still)
+            stillLayer = still
+        }
+        CATransaction.commit()
+        fade(still, to: 1, duration: duration, completion: nil)
+    }
+
+    /// Fades the still out to reveal the live video, then removes it.
+    public func hideStill(fadeDuration duration: TimeInterval) {
+        guard let still = stillLayer else { return }
+        fade(still, to: 0, duration: duration) { [weak self, weak still] in
+            guard let self, let still, self.stillLayer === still, still.opacity == 0 else { return }
+            still.removeFromSuperlayer()
+            self.stillLayer = nil
+        }
+    }
+
+    private func fade(_ target: CALayer, to opacity: Float, duration: TimeInterval, completion: (@MainActor () -> Void)?) {
+        let from = target.presentation()?.opacity ?? target.opacity
+        target.removeAnimation(forKey: "nimbscape.still")
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        target.opacity = opacity
+        CATransaction.commit()
+        guard duration > 0 else {
+            completion?()
+            return
+        }
+        let animation = CABasicAnimation(keyPath: "opacity")
+        animation.fromValue = from
+        animation.toValue = opacity
+        animation.duration = duration
+        animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        target.add(animation, forKey: "nimbscape.still")
+        if let completion {
+            DispatchQueue.main.asyncAfter(deadline: .now() + duration) {
+                MainActor.assumeIsolated { completion() }
+            }
+        }
+    }
+
+    private func stillGravity(for alignment: WallpaperAlignment) -> CALayerContentsGravity {
+        switch alignment {
+        case .fill: return .resizeAspectFill
+        case .fit: return .resizeAspect
+        case .stretch: return .resize
+        }
+    }
+
     public func cleanup() {
         if ownsPlayer {
             queuePlayer?.pause()
@@ -213,6 +285,8 @@ public class VideoWallpaperView: NSView {
         playerLooper = nil
         playerLayer?.removeFromSuperlayer()
         playerLayer = nil
+        stillLayer?.removeFromSuperlayer()
+        stillLayer = nil
         queuePlayer = nil
     }
 }
