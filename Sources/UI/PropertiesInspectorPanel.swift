@@ -131,6 +131,11 @@ public struct PropertiesInspectorPanel: View {
                     }
                     .buttonStyle(.bordered)
                     .frame(maxWidth: .infinity)
+
+                    if item.type == .video {
+                        Divider()
+                        LockScreenVideoSection(item: item)
+                    }
                 }
                 .padding(16)
             } else {
@@ -199,4 +204,67 @@ public struct PropertiesInspectorPanel: View {
             }
         }
     }
+}
+
+/// "Lock Screen" controls for a video wallpaper (macOS 26+): plays it on the lock screen by
+/// replacing the video of the Aerial chosen in System Settings.
+struct LockScreenVideoSection: View {
+    let item: WallpaperItem
+    @ObservedObject private var lockVideo = LockScreenVideo.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("LOCK SCREEN").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                Text("EXPERIMENTAL").font(.system(size: 9, weight: .bold)).foregroundStyle(.orange)
+                    .padding(.horizontal, 5).padding(.vertical, 1)
+                    .background(Color.orange.opacity(0.15), in: Capsule())
+            }
+
+            Picker("Play for", selection: $lockVideo.playDuration) {
+                ForEach(LockScreenTimeline.PlayDuration.allCases, id: \.self) { Text($0.displayName).tag($0) }
+            }
+            .pickerStyle(.segmented)
+
+            switch lockVideo.state {
+            case .encoding(let progress):
+                HStack {
+                    ProgressView(value: progress).controlSize(.small)
+                    Text("\(Int(progress * 100))%").font(.caption.monospacedDigit())
+                    Button("Cancel") { lockVideo.cancel() }.controlSize(.small)
+                }
+                Text("Preparing the video for the lock screen…").font(.caption).foregroundStyle(.secondary)
+            default:
+                Button {
+                    lockVideo.install(item)
+                } label: {
+                    Label(isCurrent ? "Update Lock Screen Video" : "Set as Lock Screen", systemImage: "lock.display")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+            }
+
+            if case .failed(let message) = lockVideo.state {
+                Text(message).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
+                if LockScreenVideo.selectedAerialAssetID() == nil {
+                    Button("Open Wallpaper Settings") { LockScreenVideo.openWallpaperSettings() }.controlSize(.small)
+                }
+            }
+
+            if let installed = lockVideo.installed {
+                if lockVideo.wasRestoredByMacOS {
+                    Text("macOS restored its own Aerial video. Set it again to bring \(installed.title) back.")
+                        .font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+                } else {
+                    Text("On the lock screen: \(installed.title)").font(.caption).foregroundStyle(.secondary)
+                }
+                Button("Restore Apple's Aerial") { lockVideo.restore() }.controlSize(.small)
+            } else {
+                Text("Uses the Aerial picked in System Settings → Wallpaper (any downloadable one, not Tahoe Day). macOS shows its clock and password field over the video.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var isCurrent: Bool { lockVideo.installed?.wallpaperID == item.id && lockVideo.isActive }
 }

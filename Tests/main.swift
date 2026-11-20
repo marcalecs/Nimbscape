@@ -3,6 +3,8 @@ import Foundation
 runOverlayLayoutTests()
 runCoreRulesTests()
 runOverlayModelTests()
+runLockScreenTimelineTests()
+runLockScreenLookTests()
 
 if TestRunner.failures.isEmpty {
     print("✅ \(TestRunner.checks) checks passed")
