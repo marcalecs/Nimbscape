@@ -937,6 +937,8 @@ struct WidgetCardStyle: ViewModifier {
     let style: OverlayWidgetStyle
     let padding: CGFloat
     static let cornerRadius: CGFloat = 22
+    /// Darkness of the glass: enough for white text on bright wallpapers, still see-through.
+    static let tint: Double = 0.24
 
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
@@ -944,13 +946,15 @@ struct WidgetCardStyle: ViewModifier {
             .padding(padding)
             .background {
                 if style == .glass {
+                    // See-through glass. A material can't blur the video underneath inside the
+                    // wallpaper window and turns into a solid gray card, so the glass is a light
+                    // dark tint with a soft top highlight and a thin bright rim instead.
                     shape
-                        .fill(.ultraThinMaterial)
-                        .environment(\.colorScheme, .dark)
-                        // Dark tint keeps white text readable on light wallpapers.
-                        .overlay(shape.fill(.black.opacity(0.28)))
-                        .overlay(shape.strokeBorder(.white.opacity(0.14), lineWidth: 1))
-                        .shadow(color: .black.opacity(0.25), radius: 18, y: 8)
+                        .fill(.black.opacity(Self.tint))
+                        .overlay(shape.fill(LinearGradient(colors: [.white.opacity(0.10), .clear],
+                                                           startPoint: .top, endPoint: .center)))
+                        .overlay(shape.strokeBorder(.white.opacity(0.18), lineWidth: 1))
+                        .shadow(color: .black.opacity(0.18), radius: 14, y: 6)
                 }
             }
             .clipShape(style == .glass ? AnyShape(shape) : AnyShape(Rectangle()))
