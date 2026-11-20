@@ -73,6 +73,14 @@ public final class WidgetCatalog: ObservableObject {
             } else {
                 self.errorMessage = "Widget store is unavailable right now."
             }
+            await self.updateInstalledWidgets()
+        }
+    }
+
+    /// Reinstalls installed widgets whose catalog version changed.
+    private func updateInstalledWidgets() async {
+        for item in widgets where installed[item.id] != nil && installed[item.id]?.version != item.version {
+            if await install(item) { WebWidgetBridge.reload(catalogID: item.id) }
         }
     }
 
@@ -164,7 +172,7 @@ struct CatalogWidgetWebView: NSViewRepresentable {
         webView.setValue(false, forKey: "drawsBackground")
         webView.underPageBackgroundColor = .clear
         webView.allowsMagnification = false
-        if let instanceID { WebWidgetBridge.register(webView, for: instanceID) }
+        if let instanceID { WebWidgetBridge.register(webView, for: instanceID, catalogID: widgetID) }
         WidgetSandbox.applyRules(to: configuration.userContentController) {
             let folder = WidgetCatalog.shared.folder(for: widgetID)
             webView.loadFileURL(folder.appendingPathComponent("index.html"), allowingReadAccessTo: folder)
@@ -212,21 +220,42 @@ enum WidgetSandbox {
 /// Visible web widgets by placed-widget ID, so the click layer can forward clicks to them.
 @MainActor
 enum WebWidgetBridge {
-    private final class WeakView { weak var view: WKWebView?; init(_ v: WKWebView) { view = v } }
+    private final class WeakView {
+        weak var view: WKWebView?
+        let catalogID: String
+        init(_ v: WKWebView, catalogID: String) { view = v; self.catalogID = catalogID }
+    }
     private static var views: [UUID: WeakView] = [:]
+    private static var lastClick: [UUID: (time: Date, point: CGPoint)] = [:]
+    private static let doubleClickInterval: TimeInterval = NSEvent.doubleClickInterval
 
-    static func register(_ webView: WKWebView, for id: UUID) {
+    static func register(_ webView: WKWebView, for id: UUID, catalogID: String) {
         views = views.filter { $0.value.view != nil }
-        views[id] = WeakView(webView)
+        views[id] = WeakView(webView, catalogID: catalogID)
+    }
+
+    /// Reloads visible copies of a widget after it was updated on disk.
+    static func reload(catalogID: String) {
+        for entry in views.values where entry.catalogID == catalogID {
+            entry.view?.reloadFromOrigin()
+        }
     }
 
     /// Dispatches a click at a point in the widget's own coordinates (CSS pixels).
     static func click(_ id: UUID, at point: CGPoint) {
         guard let webView = views[id]?.view else { return }
         let x = Int(point.x.rounded()), y = Int(point.y.rounded())
+        // A second click soon after, near the first, also sends `dblclick` (detail 2), like a browser.
+        let now = Date()
+        let isDouble = lastClick[id].map {
+            now.timeIntervalSince($0.time) <= doubleClickInterval && hypot($0.point.x - point.x, $0.point.y - point.y) < 6
+        } ?? false
+        lastClick[id] = isDouble ? nil : (now, point)
+        let events = isDouble ? "['mousedown','mouseup','click','dblclick']" : "['mousedown','mouseup','click']"
+        let detail = isDouble ? 2 : 1
         let script = """
         (function(){var e=document.elementFromPoint(\(x),\(y));if(!e)return;
-        ['mousedown','mouseup','click'].forEach(function(t){e.dispatchEvent(new MouseEvent(t,{bubbles:true,cancelable:true,clientX:\(x),clientY:\(y),view:window}));});})();
+        \(events).forEach(function(t){e.dispatchEvent(new MouseEvent(t,{bubbles:true,cancelable:true,detail:\(detail),clientX:\(x),clientY:\(y),view:window}));});})();
         """
         webView.evaluateJavaScript(script, completionHandler: nil)
     }

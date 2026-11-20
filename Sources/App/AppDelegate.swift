@@ -11,6 +11,7 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         WallpaperManager.shared.start()
         StorageJanitor.cleanupOnLaunch()
         WidgetDataHub.shared.start()
+        WidgetCatalog.shared.refresh()   // also updates installed store widgets
 
         _ = PlaylistStore.shared
         _ = ScreensaverEngine.shared

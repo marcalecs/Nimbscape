@@ -7,8 +7,10 @@ svg{position:absolute;inset:0;margin:auto;width:170px;height:170px;transform:rot
 const FOCUS=25*60,BREAK=5*60;let mode='focus',left=FOCUS,running=false,last=0;
 function fmt(s){s=Math.max(0,Math.ceil(s));return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0')}
 function render(){const total=mode==='focus'?FOCUS:BREAK;document.getElementById('t').textContent=fmt(left);
-document.getElementById('l').textContent=running?(mode==='focus'?'Focus':'Break'):(left===total?'Click to '+(mode==='focus'?'focus':'rest'):'Paused');
+document.getElementById('l').textContent=running?(mode==='focus'?'Focus':'Break'):(left===total?'Click to '+(mode==='focus'?'focus':'rest'):'Paused \u00b7 double-click to reset');
 const r=document.getElementById('ring');r.style.stroke=mode==='focus'?'#ff453a':'#30d158';r.style.strokeDashoffset=289*(1-left/total);}
 function tick(now){if(running){left-=(now-last)/1000;last=now;if(left<=0){mode=mode==='focus'?'break':'focus';left=mode==='focus'?FOCUS:BREAK;running=false;}}render();requestAnimationFrame(tick);}
 document.getElementById('card').addEventListener('click',()=>{running=!running;last=performance.now();render();});
+// Double-click resets to a fresh focus session.
+document.getElementById('card').addEventListener('dblclick',()=>{mode='focus';left=FOCUS;running=false;render();});
 requestAnimationFrame(tick);</script></body></html>
