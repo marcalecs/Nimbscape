@@ -42,27 +42,41 @@ public final class SystemStatsProvider: ObservableObject {
         previousTicks = nil
     }
 
+    private var lastDiskCheck = Date.distantPast
+
+    /// Samples are taken off the main thread (the disk query alone can take several ms); the
+    /// disk, which barely changes, is read once a minute.
     private func refresh() {
-        var next = snapshot
-        if let ticks = Self.cpuTicks() {
-            if let previous = previousTicks, ticks.total > previous.total {
-                next.cpuUsage = Double(ticks.used - previous.used) / Double(ticks.total - previous.total)
+        let previous = previousTicks
+        let readDisk = Date().timeIntervalSince(lastDiskCheck) > 60
+        if readDisk { lastDiskCheck = Date() }
+        Task.detached(priority: .utility) {
+            let ticks = Self.cpuTicks()
+            let memory = Self.memoryUsed()
+            var disk: (free: Int64, total: Int64)?
+            if readDisk, let values = try? URL(fileURLWithPath: "/").resourceValues(forKeys: [
+                .volumeAvailableCapacityForImportantUsageKey, .volumeTotalCapacityKey
+            ]) {
+                disk = (values.volumeAvailableCapacityForImportantUsage ?? 0, Int64(values.volumeTotalCapacity ?? 0))
             }
-            previousTicks = ticks
+            await MainActor.run {
+                var next = self.snapshot
+                if let ticks {
+                    if let previous, ticks.total > previous.total {
+                        next.cpuUsage = Double(ticks.used - previous.used) / Double(ticks.total - previous.total)
+                    }
+                    self.previousTicks = ticks
+                }
+                next.memoryUsed = memory
+                if let disk { next.diskFree = disk.free; next.diskTotal = disk.total }
+                next.batteryLevel = PowerMonitor.shared.batteryLevel
+                next.isOnBattery = PowerMonitor.shared.isOnBattery
+                if next != self.snapshot { self.snapshot = next }
+            }
         }
-        next.memoryUsed = Self.memoryUsed()
-        if let values = try? URL(fileURLWithPath: "/").resourceValues(forKeys: [
-            .volumeAvailableCapacityForImportantUsageKey, .volumeTotalCapacityKey
-        ]) {
-            next.diskFree = values.volumeAvailableCapacityForImportantUsage ?? 0
-            next.diskTotal = Int64(values.volumeTotalCapacity ?? 0)
-        }
-        next.batteryLevel = PowerMonitor.shared.batteryLevel
-        next.isOnBattery = PowerMonitor.shared.isOnBattery
-        if next != snapshot { snapshot = next }
     }
 
-    private static func cpuTicks() -> (used: UInt64, total: UInt64)? {
+    private nonisolated static func cpuTicks() -> (used: UInt64, total: UInt64)? {
         var info = host_cpu_load_info()
         var count = mach_msg_type_number_t(MemoryLayout<host_cpu_load_info>.size / MemoryLayout<integer_t>.size)
         let result = withUnsafeMutablePointer(to: &info) {
@@ -76,7 +90,7 @@ public final class SystemStatsProvider: ObservableObject {
         return (user + system + nice, user + system + idle + nice)
     }
 
-    private static func memoryUsed() -> UInt64 {
+    private nonisolated static func memoryUsed() -> UInt64 {
         var stats = vm_statistics64()
         var count = mach_msg_type_number_t(MemoryLayout<vm_statistics64>.size / MemoryLayout<integer_t>.size)
         let result = withUnsafeMutablePointer(to: &stats) {
@@ -109,7 +123,7 @@ public final class NowPlayingProvider: ObservableObject {
 
     private var timer: Timer?
     private var lastArtworkURL: URL?
-    private static let players: [(bundleID: String, name: String)] = [
+    private nonisolated static let players: [(bundleID: String, name: String)] = [
         ("com.spotify.client", "Spotify"),
         ("com.apple.Music", "Music")
     ]
@@ -136,7 +150,20 @@ public final class NowPlayingProvider: ObservableObject {
     }
 
     private func refresh() {
-        guard let player = runningPlayer else {
+        Task.detached(priority: .utility) {
+            let player = Self.runningPlayerName()
+            await MainActor.run { self.refresh(player: player) }
+        }
+    }
+
+    /// Checks for a running player off the main thread (the running-app list is costly to build).
+    private nonisolated static func runningPlayerName() -> String? {
+        let running = Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier))
+        return players.first { running.contains($0.bundleID) }?.name
+    }
+
+    private func refresh(player: String?) {
+        guard let player else {
             if info != nil { info = nil; artwork = nil }
             return
         }

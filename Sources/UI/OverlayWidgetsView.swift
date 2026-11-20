@@ -67,6 +67,7 @@ struct OverlayCanvasView: View {
 
     @ObservedObject private var store = OverlayStore.shared
     @ObservedObject private var editor = OverlayEditorState.shared
+    @ObservedObject private var visibleSizes = VisibleWidgetSizes.shared
 
     @State private var sizes: [UUID: CGSize] = [:]
     @State private var liveCenters: [UUID: CGPoint] = [:]
@@ -122,6 +123,7 @@ struct OverlayCanvasView: View {
             .coordinateSpace(name: Self.canvasSpace)
             .onPreferenceChange(WidgetSizeKey.self) { measured in
                 sizes = measured
+                if mode == .desktop { VisibleWidgetSizes.shared.set(measured, displayID: displayID) }
                 registerHits(canvas)
             }
             .onChange(of: config) { registerHits(canvas) }
@@ -174,6 +176,10 @@ struct OverlayCanvasView: View {
                 // Sized from the catalog manifest like the visible copy (not from its own
                 // measurement, which starts at zero and would keep the catcher 1×1).
                 WebWidgetClickCatcher(widgetID: widget.id, size: catalogSize(of: widget))
+            } else if mode == .hitLayer && widget.kind != .nowPlaying {
+                // Only Now Playing has buttons; other widgets need a plain hit area sized like
+                // the visible copy, not a second full rendering.
+                hitArea(for: widget)
             } else {
                 WidgetCardView(widget: widget, interactive: mode == .hitLayer,
                                instanceID: mode == .desktop ? widget.id : nil)
@@ -322,6 +328,21 @@ struct OverlayCanvasView: View {
 
     private func otherFrames(excluding id: UUID, canvas: CGSize) -> [CGRect] {
         config.widgets.filter { $0.id != id }.map { frameOf($0, canvas: canvas) }
+    }
+
+    @ViewBuilder
+    private func hitArea(for widget: OverlayWidget) -> some View {
+        let size = visibleSizes.sizes[displayID]?[widget.id] ?? CGSize(width: 1, height: 1)
+        Color.white.opacity(0.011)
+            .frame(width: size.width, height: size.height)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                switch widget.kind {
+                case .weather: WidgetCardView.open(bundleID: "com.apple.weather")
+                case .calendar: WidgetCardView.open(bundleID: "com.apple.iCal")
+                default: break
+                }
+            }
     }
 
     private func catalogSize(of widget: OverlayWidget) -> CGSize {
@@ -679,7 +700,7 @@ struct WidgetCardView: View {
         }
     }
 
-    private static func open(bundleID: String) {
+    static func open(bundleID: String) {
         guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else { return }
         NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
     }
@@ -969,5 +990,17 @@ struct WidgetCardStyle: ViewModifier {
             .shadow(color: .black.opacity(style == .minimal ? 0.55 : 0), radius: 14)
             .shadow(color: .black.opacity(style == .minimal ? 0.5 : 0), radius: 2, y: 1)
             .fixedSize()
+    }
+}
+
+/// Unscaled sizes of the visible widgets per display, so the click layer can size plain hit
+/// areas without rendering the widgets a second time.
+@MainActor
+final class VisibleWidgetSizes: ObservableObject {
+    static let shared = VisibleWidgetSizes()
+    @Published private(set) var sizes: [String: [UUID: CGSize]] = [:]
+
+    func set(_ measured: [UUID: CGSize], displayID: String) {
+        if sizes[displayID] != measured { sizes[displayID] = measured }
     }
 }
