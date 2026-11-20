@@ -70,14 +70,14 @@ public enum StorageJanitor {
                    at: managed,
                    includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey, .isRegularFileKey]
                ) {
-                let cutoff = Date().addingTimeInterval(-grace)
                 for file in files {
                     let values = try? file.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey, .isRegularFileKey])
                     guard values?.isRegularFile == true else { continue }
                     let modified = values?.contentModificationDate ?? .distantPast
-                    let isPart = file.pathExtension == "part"
-                    let isOrphan = !referenced.contains(file.standardizedFileURL.path)
-                    guard (isPart || isOrphan), modified < cutoff else { continue }
+                    guard CoreRules.shouldRemoveDownloadedFile(
+                        path: file.standardizedFileURL.path, referenced: referenced,
+                        modified: modified, now: Date(), gracePeriod: grace
+                    ) else { continue }
                     freed += Int64(values?.fileSize ?? 0)
                     try? fm.removeItem(at: file)
                 }
