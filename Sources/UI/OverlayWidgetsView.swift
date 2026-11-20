@@ -171,7 +171,9 @@ struct OverlayCanvasView: View {
         Group {
             if mode == .hitLayer && widget.kind == .custom {
                 // Web widgets aren't duplicated: clicks are forwarded to the visible copy.
-                WebWidgetClickCatcher(widgetID: widget.id, size: CGSize(width: base.width, height: base.height))
+                // Sized from the catalog manifest like the visible copy (not from its own
+                // measurement, which starts at zero and would keep the catcher 1×1).
+                WebWidgetClickCatcher(widgetID: widget.id, size: catalogSize(of: widget))
             } else {
                 WidgetCardView(widget: widget, interactive: mode == .hitLayer,
                                instanceID: mode == .desktop ? widget.id : nil)
@@ -320,6 +322,11 @@ struct OverlayCanvasView: View {
 
     private func otherFrames(excluding id: UUID, canvas: CGSize) -> [CGRect] {
         config.widgets.filter { $0.id != id }.map { frameOf($0, canvas: canvas) }
+    }
+
+    private func catalogSize(of widget: OverlayWidget) -> CGSize {
+        guard let id = widget.customID, let item = WidgetCatalog.shared.installed[id] else { return CGSize(width: 1, height: 1) }
+        return CGSize(width: item.width, height: item.height)
     }
 
     private func guideLines(x: CGFloat?, y: CGFloat?) -> [SnapGuide] {
