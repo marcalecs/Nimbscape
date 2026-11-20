@@ -311,7 +311,7 @@ public class PowerMonitor: ObservableObject {
                 }
                 if let cap = desc[kIOPSCurrentCapacityKey as String] as? Int {
                     let maxCap = (desc[kIOPSMaxCapacityKey as String] as? Int) ?? 100
-                    level = maxCap > 0 ? Int((Double(cap) / Double(maxCap) * 100).rounded()) : cap
+                    level = CoreRules.batteryPercent(current: cap, max: maxCap)
                 }
             }
         }

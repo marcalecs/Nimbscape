@@ -97,7 +97,7 @@ public final class WidgetCatalog: ObservableObject {
         do {
             try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
             for file in widget.files {
-                guard Self.isSafeRelativePath(file) else { throw URLError(.badURL) }
+                guard CoreRules.isSafeRelativePath(file) else { throw URLError(.badURL) }
                 let destination = staging.appendingPathComponent(file)
                 try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
                 let data = try await Self.loadFile(widgetID: widget.id, file: file)
@@ -131,10 +131,6 @@ public final class WidgetCatalog: ObservableObject {
         return try Data(contentsOf: base.appendingPathComponent(widgetID).appendingPathComponent(file))
     }
 
-    /// Catalog paths must stay inside the widget folder.
-    private nonisolated static func isSafeRelativePath(_ path: String) -> Bool {
-        !path.isEmpty && !path.hasPrefix("/") && !path.split(separator: "/").contains("..")
-    }
 
     private func loadInstalled() {
         guard let folders = try? FileManager.default.contentsOfDirectory(at: Self.installDirectory, includingPropertiesForKeys: nil) else { return }

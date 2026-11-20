@@ -48,6 +48,7 @@ swiftc -O -swift-version 6 \
     -framework ImageIO \
     -framework CoreMedia \
     -framework EventKit \
+    Sources/Core/*.swift \
     Sources/Models/*.swift \
     Sources/App/*.swift \
     Sources/Engine/*.swift \

@@ -29,6 +29,14 @@ private enum ResizeCorner: CaseIterable {
     /// Direction the dragged corner moves away from the anchor (+1 right/down, -1 left/up).
     var sx: CGFloat { self == .topRight || self == .bottomRight ? 1 : -1 }
     var sy: CGFloat { self == .bottomLeft || self == .bottomRight ? 1 : -1 }
+    var layoutCorner: OverlayLayout.Corner {
+        switch self {
+        case .topLeft: return .topLeft
+        case .topRight: return .topRight
+        case .bottomLeft: return .bottomLeft
+        case .bottomRight: return .bottomRight
+        }
+    }
     var alignment: Alignment {
         switch self {
         case .topLeft: return .topLeading
@@ -68,22 +76,10 @@ struct OverlayCanvasView: View {
     @State private var guides: [SnapGuide] = []
     @State private var isDropTargeted = false
     @State private var showGallery = false
-    /// Guide each axis currently sits on, and guides recently left (cooling down).
-    @State private var stuckX: CGFloat?
-    @State private var stuckY: CGFloat?
-    @State private var cooldownX: [CGFloat: Date] = [:]
-    @State private var cooldownY: [CGFloat: Date] = [:]
+    @State private var snapState = OverlayLayout.SnapState()
 
     private var config: OverlayConfig { store.config(for: wallpaperID) }
     private var isEditor: Bool { mode == .editor }
-    /// Snapping follows Figma/Keynote: the position always comes from the pointer, a guide only
-    /// applies within a few points, never while moving fast, and not while ⌘ is held. A guide that
-    /// was just left can't be caught again for a short cooldown.
-    private static let snapDistance: CGFloat = 5
-    private static let snapMaxSpeed: CGFloat = 650          // points per second
-    private static let snapCooldown: TimeInterval = 0.4
-    /// Spacing when widgets snap side by side or stacked.
-    private static let gap: CGFloat = 8
     private static let canvasSpace = "nimbscape.overlay.canvas"
 
     var body: some View {
@@ -240,10 +236,16 @@ struct OverlayCanvasView: View {
                 let origin = dragOrigins[widget.id] ?? clamp(pixelCenter(of: widget, canvas: canvas), size: size, canvas: canvas)
                 dragOrigins[widget.id] = origin
                 let proposed = CGPoint(x: origin.x + value.translation.width, y: origin.y + value.translation.height)
-                let speed = hypot(value.velocity.width, value.velocity.height)
-                let snapped = snap(proposed, size: size, moving: widget.id, canvas: canvas, speed: speed)
+                var state = snapState
+                let snapped = OverlayLayout.snap(
+                    proposed: proposed, size: size,
+                    others: otherFrames(excluding: widget.id, canvas: canvas), canvas: canvas,
+                    speed: hypot(value.velocity.width, value.velocity.height),
+                    disabled: NSEvent.modifierFlags.contains(.command), state: &state
+                )
+                snapState = state
                 liveCenters[widget.id] = clamp(snapped.center, size: size, canvas: canvas)
-                guides = snapped.guides
+                guides = guideLines(x: snapped.guideX, y: snapped.guideY)
             }
             .onEnded { _ in
                 if let center = liveCenters[widget.id] {
@@ -252,10 +254,7 @@ struct OverlayCanvasView: View {
                 liveCenters[widget.id] = nil
                 dragOrigins[widget.id] = nil
                 guides = []
-                stuckX = nil
-                stuckY = nil
-                cooldownX = [:]
-                cooldownY = [:]
+                snapState = OverlayLayout.SnapState()
             }
     }
 
@@ -269,41 +268,14 @@ struct OverlayCanvasView: View {
                 let start = resizeOrigins[widget.id] ?? frameOf(widget, canvas: canvas)
                 resizeOrigins[widget.id] = start
 
-                let anchor = CGPoint(x: corner.sx > 0 ? start.minX : start.maxX, y: corner.sy > 0 ? start.minY : start.maxY)
-                let dragged = CGPoint(x: (corner.sx > 0 ? start.maxX : start.minX) + value.translation.width,
-                                      y: (corner.sy > 0 ? start.maxY : start.minY) + value.translation.height)
-                var scale = max(abs(dragged.x - anchor.x) / base.width, abs(dragged.y - anchor.y) / base.height)
-
-                // Snap the moving vertical edge first, then the horizontal one.
-                guides = []
-                if !NSEvent.modifierFlags.contains(.command) {
-                    let edgeX = anchor.x + corner.sx * base.width * scale
-                    let edgeY = anchor.y + corner.sy * base.height * scale
-                    var xs: [CGFloat] = [], ys: [CGFloat] = []
-                    for other in config.widgets where other.id != widget.id {
-                        let o = frameOf(other, canvas: canvas)
-                        guard o.width > 0 else { continue }
-                        xs += [o.minX, o.maxX, o.minX - Self.gap, o.maxX + Self.gap]
-                        ys += [o.minY, o.maxY, o.minY - Self.gap, o.maxY + Self.gap]
-                    }
-                    if let x = xs.min(by: { abs($0 - edgeX) < abs($1 - edgeX) }), abs(x - edgeX) <= Self.snapDistance {
-                        scale = abs(x - anchor.x) / base.width
-                        guides.append(SnapGuide(axis: .vertical, position: x))
-                    } else if let y = ys.min(by: { abs($0 - edgeY) < abs($1 - edgeY) }), abs(y - edgeY) <= Self.snapDistance {
-                        scale = abs(y - anchor.y) / base.height
-                        guides.append(SnapGuide(axis: .horizontal, position: y))
-                    }
-                }
-
-                // Stay inside the safe area and the allowed size range.
-                let roomX = corner.sx > 0 ? canvas.width - insets.trailing - anchor.x : anchor.x - insets.leading
-                let roomY = corner.sy > 0 ? canvas.height - insets.bottom - anchor.y : anchor.y - insets.top
-                scale = min(scale, roomX / base.width, roomY / base.height, 2.2)
-                scale = max(scale, 0.5)
-
-                let size = CGSize(width: base.width * scale, height: base.height * scale)
-                liveScales[widget.id] = scale
-                liveCenters[widget.id] = CGPoint(x: anchor.x + corner.sx * size.width / 2, y: anchor.y + corner.sy * size.height / 2)
+                let result = OverlayLayout.resize(
+                    start: start, baseSize: base, corner: corner.layoutCorner, translation: value.translation,
+                    others: otherFrames(excluding: widget.id, canvas: canvas), canvas: canvas, insets: layoutInsets,
+                    snapping: !NSEvent.modifierFlags.contains(.command)
+                )
+                guides = guideLines(x: result.guideX, y: result.guideY)
+                liveScales[widget.id] = result.scale
+                liveCenters[widget.id] = result.center
             }
             .onEnded { _ in
                 if let scale = liveScales[widget.id], let center = liveCenters[widget.id] {
@@ -339,71 +311,19 @@ struct OverlayCanvasView: View {
 
     /// Invisible barrier: keeps the whole widget inside the safe area (menu bar, Dock, edges).
     private func clamp(_ center: CGPoint, size: CGSize, canvas: CGSize) -> CGPoint {
-        func axis(_ value: CGFloat, half: CGFloat, low: CGFloat, high: CGFloat) -> CGFloat {
-            guard high - low > half * 2 else { return (low + high) / 2 }
-            return min(high - half, max(low + half, value))
-        }
-        return CGPoint(
-            x: axis(center.x, half: size.width / 2, low: insets.leading, high: canvas.width - insets.trailing),
-            y: axis(center.y, half: size.height / 2, low: insets.top, high: canvas.height - insets.bottom)
-        )
+        OverlayLayout.clamp(center: center, size: size, canvas: canvas, insets: layoutInsets)
     }
 
-    /// Aligns edges and centers with other widgets, places it beside a widget it sits next to (with
-    /// a fixed gap), and centers it on the screen.
-    private func snap(_ proposed: CGPoint, size: CGSize, moving id: UUID, canvas: CGSize, speed: CGFloat) -> (center: CGPoint, guides: [SnapGuide]) {
-        let now = Date()
-        func release(_ stuck: inout CGFloat?, _ cooldown: inout [CGFloat: Date]) {
-            if let left = stuck { cooldown[left] = now.addingTimeInterval(Self.snapCooldown) }
-            stuck = nil
-        }
-        guard speed < Self.snapMaxSpeed, !NSEvent.modifierFlags.contains(.command) else {
-            release(&stuckX, &cooldownX)
-            release(&stuckY, &cooldownY)
-            return (proposed, [])
-        }
+    private var layoutInsets: OverlayLayout.Insets {
+        OverlayLayout.Insets(top: insets.top, leading: insets.leading, bottom: insets.bottom, trailing: insets.trailing)
+    }
 
-        let frame = CGRect(x: proposed.x - size.width / 2, y: proposed.y - size.height / 2, width: size.width, height: size.height)
-        var xTargets: [(mine: CGFloat, guide: CGFloat)] = [(frame.midX, canvas.width / 2)]
-        var yTargets: [(mine: CGFloat, guide: CGFloat)] = [(frame.midY, canvas.height / 2)]
-        for other in config.widgets where other.id != id {
-            let o = frameOf(other, canvas: canvas)
-            guard o.width > 0 else { continue }
-            xTargets += [(frame.minX, o.minX), (frame.maxX, o.maxX), (frame.midX, o.midX)]
-            yTargets += [(frame.minY, o.minY), (frame.maxY, o.maxY), (frame.midY, o.midY)]
-            // Side by side only when the widgets actually face each other.
-            if frame.minY < o.maxY && frame.maxY > o.minY {
-                xTargets += [(frame.minX, o.maxX + Self.gap), (frame.maxX, o.minX - Self.gap)]
-            }
-            if frame.minX < o.maxX && frame.maxX > o.minX {
-                yTargets += [(frame.minY, o.maxY + Self.gap), (frame.maxY, o.minY - Self.gap)]
-            }
-        }
+    private func otherFrames(excluding id: UUID, canvas: CGSize) -> [CGRect] {
+        config.widgets.filter { $0.id != id }.map { frameOf($0, canvas: canvas) }
+    }
 
-        func resolve(_ targets: [(mine: CGFloat, guide: CGFloat)], stuck: inout CGFloat?, cooldown: inout [CGFloat: Date]) -> (delta: CGFloat, guide: CGFloat)? {
-            cooldown = cooldown.filter { $0.value > now }
-            let usable = targets.filter { target in !cooldown.keys.contains { abs($0 - target.guide) < 0.5 } }
-            guard let best = usable.min(by: { abs($0.guide - $0.mine) < abs($1.guide - $1.mine) }),
-                  abs(best.guide - best.mine) <= Self.snapDistance else {
-                release(&stuck, &cooldown)
-                return nil
-            }
-            if let current = stuck, abs(current - best.guide) > 0.5 { cooldown[current] = now.addingTimeInterval(Self.snapCooldown) }
-            stuck = best.guide
-            return (best.guide - best.mine, best.guide)
-        }
-
-        var center = proposed
-        var guides: [SnapGuide] = []
-        if let x = resolve(xTargets, stuck: &stuckX, cooldown: &cooldownX) {
-            center.x += x.delta
-            guides.append(SnapGuide(axis: .vertical, position: x.guide))
-        }
-        if let y = resolve(yTargets, stuck: &stuckY, cooldown: &cooldownY) {
-            center.y += y.delta
-            guides.append(SnapGuide(axis: .horizontal, position: y.guide))
-        }
-        return (center, guides)
+    private func guideLines(x: CGFloat?, y: CGFloat?) -> [SnapGuide] {
+        (x.map { [SnapGuide(axis: .vertical, position: $0)] } ?? []) + (y.map { [SnapGuide(axis: .horizontal, position: $0)] } ?? [])
     }
 
     private func registerHits(_ canvas: CGSize) {
@@ -1001,22 +921,8 @@ private struct MonthGrid: View {
         }
     }
 
-    /// Days of the current month, padded with nils so the 1st falls on its weekday column.
-    private func monthDays() -> [Date?] {
-        guard let interval = calendar.dateInterval(of: .month, for: today),
-              let range = calendar.range(of: .day, in: .month, for: today) else { return [] }
-        let firstWeekday = calendar.component(.weekday, from: interval.start)
-        let leading = (firstWeekday - calendar.firstWeekday + 7) % 7
-        return Array(repeating: nil, count: leading) + range.compactMap {
-            calendar.date(byAdding: .day, value: $0 - 1, to: interval.start)
-        }
-    }
-
-    private func weekdaySymbols() -> [String] {
-        let symbols = calendar.veryShortStandaloneWeekdaySymbols
-        let start = calendar.firstWeekday - 1
-        return Array(symbols[start...] + symbols[..<start])
-    }
+    private func monthDays() -> [Date?] { CoreRules.monthDays(for: today, calendar: calendar) }
+    private func weekdaySymbols() -> [String] { CoreRules.weekdaySymbols(calendar: calendar) }
 }
 
 private extension Color {
