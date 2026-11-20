@@ -739,7 +739,7 @@ public struct MainWindowView: View {
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
-                        Toggle("Pause in macOS Low Power Mode", isOn: $preferences.pauseOnLowPowerMode)
+                        Toggle("Limit to 30 FPS in macOS Low Power Mode", isOn: $preferences.pauseOnLowPowerMode)
                         Toggle("Manual Battery Override (Resume Anyway)", isOn: $power.overrideSystemPause)
 
                         HStack {

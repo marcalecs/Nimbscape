@@ -11,6 +11,9 @@ public struct PowerPolicyState: Equatable, Sendable {
     /// Displays (by `stableDisplayID`) paused because a window covers them while other displays keep
     /// playing. Empty when nothing is covered or when the whole desktop is paused (`shouldPause`).
     public var pausedDisplayIDs: Set<String> = []
+    /// True when the whole desktop is paused only because windows cover every display. Such a pause
+    /// may be lifted early the moment a wallpaper window becomes visible (e.g. mid Space swipe).
+    public var isWindowCoverPause: Bool = false
 
     public static let running = PowerPolicyState(
         shouldPause: false,
@@ -34,6 +37,8 @@ private struct WindowScan {
 public protocol PowerMonitorDelegate: AnyObject {
     func powerMonitorDidUpdatePolicy(_ state: PowerPolicyState)
     func powerMonitorDidUnlockOrWake()
+    /// Called after the post-Space-switch evaluation ran, whether or not the policy changed.
+    func powerMonitorDidSettleAfterSpaceChange()
 }
 
 @MainActor
@@ -51,6 +56,11 @@ public class PowerMonitor: ObservableObject {
     @Published public private(set) var isOnBattery: Bool = false
     @Published public private(set) var batteryLevel: Int? = nil
     @Published public private(set) var isLowPowerMode: Bool = false
+
+    /// True when wallpapers should run at a reduced frame rate (30 FPS) to save energy.
+    public var isLowPowerThrottled: Bool {
+        AppPreferences.shared.pauseOnLowPowerMode && isLowPowerMode
+    }
     @Published public private(set) var isSystemPaused: Bool = false
     @Published public private(set) var isStoppedToFreeRAM: Bool = false
     @Published public private(set) var isRuleMuted: Bool = false
@@ -268,7 +278,10 @@ public class PowerMonitor: ObservableObject {
     private func scheduleDeferredEvaluation() {
         deferredEvaluation?.cancel()
         let work = DispatchWorkItem { [weak self] in
-            Task { @MainActor [weak self] in self?.evaluateState() }
+            Task { @MainActor [weak self] in
+                self?.evaluateState()
+                self?.delegate?.powerMonitorDidSettleAfterSpaceChange()
+            }
         }
         deferredEvaluation = work
         let delay = max(0, spaceSettleDeadline.timeIntervalSinceNow)
@@ -516,7 +529,8 @@ public class PowerMonitor: ObservableObject {
                     shouldStopAndFreeRAM: false,
                     shouldMuteAudio: ruleMutesAudio,
                     isHardwareSleepOrLock: false,
-                    pauseReason: label
+                    pauseReason: label,
+                    isWindowCoverPause: true
                 ),
                 ruleMatch: ruleEval
             )
@@ -525,19 +539,8 @@ public class PowerMonitor: ObservableObject {
         let partiallyPausedDisplays = coveredDisplays.intersection(allDisplays)
 
         if !overrideSystemPause {
-            if preferences.pauseOnLowPowerMode && isLowPowerMode {
-                applyPolicy(
-                    PowerPolicyState(
-                        shouldPause: true,
-                        shouldStopAndFreeRAM: false,
-                        shouldMuteAudio: ruleMutesAudio,
-                        isHardwareSleepOrLock: false,
-                        pauseReason: "Low Power Mode"
-                    ),
-                    ruleMatch: ruleEval
-                )
-                return
-            }
+            // Low Power Mode no longer pauses: WallpaperManager caps playback at 30 FPS instead
+            // (see `isLowPowerThrottled`).
 
             if preferences.pauseOnBattery && isOnBattery
                 && (batteryLevel ?? 0) <= preferences.pauseOnBatteryBelowPercent {
@@ -584,3 +587,4 @@ public class PowerMonitor: ObservableObject {
         }
     }
 }
+
