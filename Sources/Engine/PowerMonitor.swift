@@ -62,6 +62,12 @@ public class PowerMonitor: ObservableObject {
     private var lastPolicy: PowerPolicyState = .running
     private var checkTimer: Timer?
     private var timerTickCount: Int = 0
+
+    /// After a Space switch the window scan and any pause/resume wait until the swipe animation
+    /// has settled, then run once. Changing playback mid-swipe made the gesture stutter.
+    private static let spaceSettleDelay: TimeInterval = 0.6
+    private var spaceSettleDeadline: Date = .distantPast
+    private var deferredEvaluation: DispatchWorkItem?
     private var cancellables = Set<AnyCancellable>()
 
     private init() {
@@ -107,7 +113,7 @@ public class PowerMonitor: ObservableObject {
             Task { @MainActor [weak self] in self?.handleWorkspaceAppChange() }
         }
         workspaceCenter.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: nil) { [weak self] _ in
-            Task { @MainActor [weak self] in self?.handleWorkspaceAppChange() }
+            Task { @MainActor [weak self] in self?.handleActiveSpaceChange() }
         }
         workspaceCenter.addObserver(forName: NSWorkspace.didLaunchApplicationNotification, object: nil, queue: nil) { [weak self] _ in
             Task { @MainActor [weak self] in self?.handleWorkspaceAppChange() }
@@ -180,6 +186,8 @@ public class PowerMonitor: ObservableObject {
                 if self.timerTickCount % 6 == 0 {
                     self.refreshBatteryTelemetry()
                 }
+                // A deferred evaluation is already queued for the end of a Space switch.
+                guard !self.isSettlingAfterSpaceChange else { return }
                 self.evaluateState()
             }
         }
@@ -239,7 +247,32 @@ public class PowerMonitor: ObservableObject {
     }
 
     private func handleWorkspaceAppChange() {
+        if isSettlingAfterSpaceChange {
+            scheduleDeferredEvaluation()
+            return
+        }
         evaluateState()
+    }
+
+    private func handleActiveSpaceChange() {
+        spaceSettleDeadline = Date().addingTimeInterval(Self.spaceSettleDelay)
+        scheduleDeferredEvaluation()
+    }
+
+    /// True while a Space-switch animation may still be running.
+    public var isSettlingAfterSpaceChange: Bool {
+        Date() < spaceSettleDeadline
+    }
+
+    /// Coalesces every evaluation requested during the settle window into one at its end.
+    private func scheduleDeferredEvaluation() {
+        deferredEvaluation?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            Task { @MainActor [weak self] in self?.evaluateState() }
+        }
+        deferredEvaluation = work
+        let delay = max(0, spaceSettleDeadline.timeIntervalSinceNow)
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
     }
 
     private func handlePowerStateDidChange() {

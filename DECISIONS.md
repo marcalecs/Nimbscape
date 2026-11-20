@@ -3,7 +3,7 @@
 ## Desktop Layering & Window Management
 - Desktop windows are positioned at `CGWindowLevelForKey(.desktopIconWindow) - 1`, placing live wallpapers above Dock desktop surfaces and strictly below Finder desktop icons and widgets.
 - `WallpaperWindow` enables `.canJoinAllSpaces`, `.stationary`, `.ignoresCycle`, and `.fullScreenAuxiliary` with `canHide = false`, `hidesOnDeactivate = false`, and `isReleasedWhenClosed = false`.
-- Visibility recovery relies on native macOS window hierarchy (`isVisible && isOnActiveSpace`) rather than WindowServer compositing queries (`kCGWindowIsOnscreen`), preventing false-positive reattachment loops when foreground windows obscure the desktop icon level. Debounces Space-change handling by `0.45s` to avoid interfering with trackpad gestures.
+- Visibility recovery relies on native macOS window hierarchy (`isVisible && isOnActiveSpace`) rather than WindowServer compositing queries (`kCGWindowIsOnscreen`), preventing false-positive reattachment loops when foreground windows obscure the desktop icon level. Debounces Space-change handling by `0.6s` to avoid interfering with trackpad gestures. *(2026-11-20)* `PowerMonitor` uses the same settle window: window scans and pause/resume requested during a Space switch (space change, app activation, periodic timer) are coalesced into one evaluation after it.
 
 ## Rendering & Energy Efficiency
 - Built-in HTML5 presets use offscreen cached backgrounds, pre-rendered gradients, and zero per-frame `shadowBlur` or animated CSS blur filters.
