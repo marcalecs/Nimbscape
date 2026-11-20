@@ -143,7 +143,8 @@ public class WallpaperManager: ObservableObject, PowerMonitorDelegate {
             }
         }
         spaceRecoveryWorkItem = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45, execute: work)
+        // Wait out the swipe animation (same settle window as PowerMonitor) before reordering windows.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6, execute: work)
     }
 
     @discardableResult
