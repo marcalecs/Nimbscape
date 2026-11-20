@@ -155,6 +155,11 @@ struct CatalogWidgetWebView: NSViewRepresentable {
     func makeNSView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
+        // The app draws the card; a widget's own card background/border would double it.
+        let css = "html,body{background:transparent!important}.card{background:transparent!important;border:none!important;box-shadow:none!important}"
+        configuration.userContentController.addUserScript(WKUserScript(
+            source: "var s=document.createElement('style');s.textContent='\(css)';document.documentElement.appendChild(s);",
+            injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         let webView = SandboxedWidgetWebView(frame: .zero, configuration: configuration)
         webView.setValue(false, forKey: "drawsBackground")
         webView.underPageBackgroundColor = .clear
