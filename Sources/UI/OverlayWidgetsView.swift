@@ -567,12 +567,10 @@ struct WidgetInspector: View {
             Label(title, systemImage: widget.kind.symbolName)
                 .font(.headline)
 
-            if widget.kind != .custom {
-                Picker("Style", selection: binding(\.style)) {
-                    ForEach(OverlayWidgetStyle.allCases) { Text($0.displayName).tag($0) }
-                }
-                .pickerStyle(.segmented)
+            Picker("Style", selection: binding(\.style)) {
+                ForEach(OverlayWidgetStyle.allCases) { Text($0.displayName).tag($0) }
             }
+            .pickerStyle(.segmented)
 
             if widget.kind == .clock {
                 Picker("Face", selection: binding(\.clockFace)) {
@@ -637,26 +635,13 @@ struct WidgetCardView: View {
 
     var body: some View {
         if widget.kind == .custom {
+            // Store widgets are transparent pages; the app draws the same card as for built-ins.
             customWidget
+                .modifier(WidgetCardStyle(style: widget.style, padding: 0))
         } else {
             content
                 .foregroundStyle(.white)
-                .padding(widget.style == .glass ? 18 : 6)
-                .background {
-                    if widget.style == .glass {
-                        RoundedRectangle(cornerRadius: 22, style: .continuous)
-                            .fill(.ultraThinMaterial)
-                            .environment(\.colorScheme, .dark)
-                            // Dark tint keeps white text readable on light wallpapers.
-                            .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(.black.opacity(0.28)))
-                            .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(.white.opacity(0.14), lineWidth: 1))
-                            .shadow(color: .black.opacity(0.25), radius: 18, y: 8)
-                    }
-                }
-                // Minimal style: a soft dark halo plus a tight shadow keep text legible on any wallpaper.
-                .shadow(color: .black.opacity(widget.style == .minimal ? 0.55 : 0), radius: 14)
-                .shadow(color: .black.opacity(widget.style == .minimal ? 0.5 : 0), radius: 2, y: 1)
-                .fixedSize()
+                .modifier(WidgetCardStyle(style: widget.style, padding: widget.style == .glass ? 18 : 6))
         }
     }
 
@@ -944,5 +929,38 @@ private struct WebWidgetClickCatcher: View {
             .onTapGesture(coordinateSpace: .local) { location in
                 WebWidgetBridge.click(widgetID, at: location)
             }
+    }
+}
+
+/// The one card look shared by built-in and store widgets, so every widget has the same glass.
+struct WidgetCardStyle: ViewModifier {
+    let style: OverlayWidgetStyle
+    let padding: CGFloat
+    static let cornerRadius: CGFloat = 22
+    /// Darkness of the glass: enough for white text on bright wallpapers, still see-through.
+    static let tint: Double = 0.24
+
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
+        content
+            .padding(padding)
+            .background {
+                if style == .glass {
+                    // See-through glass. A material can't blur the video underneath inside the
+                    // wallpaper window and turns into a solid gray card, so the glass is a light
+                    // dark tint with a soft top highlight and a thin bright rim instead.
+                    shape
+                        .fill(.black.opacity(Self.tint))
+                        .overlay(shape.fill(LinearGradient(colors: [.white.opacity(0.10), .clear],
+                                                           startPoint: .top, endPoint: .center)))
+                        .overlay(shape.strokeBorder(.white.opacity(0.18), lineWidth: 1))
+                        .shadow(color: .black.opacity(0.18), radius: 14, y: 6)
+                }
+            }
+            .clipShape(style == .glass ? AnyShape(shape) : AnyShape(Rectangle()))
+            // Minimal style: a soft dark halo plus a tight shadow keep text legible on any wallpaper.
+            .shadow(color: .black.opacity(style == .minimal ? 0.55 : 0), radius: 14)
+            .shadow(color: .black.opacity(style == .minimal ? 0.5 : 0), radius: 2, y: 1)
+            .fixedSize()
     }
 }
