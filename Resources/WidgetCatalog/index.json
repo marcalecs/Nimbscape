@@ -1,7 +1,7 @@
 {
   "widgets": [
     {"id": "analog-clock", "name": "Analog Clock", "description": "A smooth analog clock face.", "author": "Nimbscape", "version": "1.1", "symbol": "clock.circle", "width": 180, "height": 180, "files": ["index.html"]},
-    {"id": "pomodoro", "name": "Pomodoro", "description": "25/5 focus timer. Click to start or pause, double-click to reset.", "author": "Nimbscape", "version": "1.2", "symbol": "timer", "width": 200, "height": 200, "files": ["index.html"]},
+    {"id": "pomodoro", "name": "Pomodoro", "description": "25/5 focus timer. Click to start or pause, double-click to reset.", "author": "Nimbscape", "version": "1.3", "symbol": "timer", "width": 200, "height": 200, "files": ["index.html"]},
     {"id": "world-clock", "name": "World Clock", "description": "Time in New York, London and Tokyo.", "author": "Nimbscape", "version": "1.1", "symbol": "globe", "width": 260, "height": 150, "files": ["index.html"]},
     {"id": "countdown", "name": "New Year Countdown", "description": "Days, hours and minutes until New Year.", "author": "Nimbscape", "version": "1.1", "symbol": "sparkles", "width": 260, "height": 120, "files": ["index.html"]},
     {"id": "daily-quote", "name": "Quote of the Day", "description": "A new quote every day.", "author": "Nimbscape", "version": "1.1", "symbol": "quote.opening", "width": 300, "height": 140, "files": ["index.html"]}

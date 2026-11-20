@@ -1,13 +1,16 @@
 <!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;height:100%;background:transparent;overflow:hidden;font-family:-apple-system,"SF Pro Rounded",system-ui;color:#fff;-webkit-user-select:none;cursor:default}
 .card{box-sizing:border-box;width:100%;height:100%;border-radius:22px;background:transparent;display:flex;flex-direction:column;align-items:center;justify-content:center;text-shadow:0 1px 3px rgba(0,0,0,.4)}
-.t{font-size:44px;font-weight:300;font-variant-numeric:tabular-nums}.l{font-size:13px;opacity:.75;letter-spacing:.08em;text-transform:uppercase;margin-top:2px}
+.t{font-size:44px;font-weight:300;font-variant-numeric:tabular-nums}.l{font-size:12px;opacity:.75;letter-spacing:.08em;text-transform:uppercase;margin-top:2px;text-align:center}
+.h{font-size:10px;opacity:.55;margin-top:3px;text-align:center;letter-spacing:.02em;min-height:12px}
 svg{position:absolute;inset:0;margin:auto;width:170px;height:170px;transform:rotate(-90deg)}.wrap{position:relative;width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center}</style></head>
 <body><div class="card" id="card"><div class="wrap"><svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="46" fill="none" stroke="rgba(255,255,255,.15)" stroke-width="3"/><circle id="ring" cx="50" cy="50" r="46" fill="none" stroke="#ff453a" stroke-width="3" stroke-linecap="round" stroke-dasharray="289" stroke-dashoffset="0"/></svg>
-<div class="t" id="t">25:00</div><div class="l" id="l">Click to focus</div></div></div><script>
+<div class="t" id="t">25:00</div><div class="l" id="l">Click to focus</div><div class="h" id="h"></div></div></div><script>
 const FOCUS=25*60,BREAK=5*60;let mode='focus',left=FOCUS,running=false,last=0;
 function fmt(s){s=Math.max(0,Math.ceil(s));return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0')}
 function render(){const total=mode==='focus'?FOCUS:BREAK;document.getElementById('t').textContent=fmt(left);
-document.getElementById('l').textContent=running?(mode==='focus'?'Focus':'Break'):(left===total?'Click to '+(mode==='focus'?'focus':'rest'):'Paused \u00b7 double-click to reset');
+const fresh=left>total-1;   // under a second elapsed counts as not started
+document.getElementById('l').textContent=running?(mode==='focus'?'Focus':'Break'):(fresh?'Click to '+(mode==='focus'?'focus':'rest'):'Paused');
+document.getElementById('h').textContent=(!running&&!fresh)?'Double-click to reset':'';
 const r=document.getElementById('ring');r.style.stroke=mode==='focus'?'#ff453a':'#30d158';r.style.strokeDashoffset=289*(1-left/total);}
 function tick(now){if(running){left-=(now-last)/1000;last=now;if(left<=0){mode=mode==='focus'?'break':'focus';left=mode==='focus'?FOCUS:BREAK;running=false;}}render();requestAnimationFrame(tick);}
 document.getElementById('card').addEventListener('click',()=>{running=!running;last=performance.now();render();});
