@@ -133,6 +133,11 @@ public struct MainWindowView: View {
                     Button(action: { PlaylistStore.shared.advanceNext() }) {
                         Label("Next Wallpaper", systemImage: "forward.end.fill")
                     }
+
+                    Button(action: { OverlayController.shared.beginEditing() }) {
+                        Label("Customize Wallpaper", systemImage: "slider.horizontal.below.square.and.square.filled")
+                    }
+                    .help("Add widgets and effects on top of the wallpaper")
                     .help("Next Wallpaper (⌘⇧N)")
 
                     Button(action: { preferences.isMuted.toggle() }) {

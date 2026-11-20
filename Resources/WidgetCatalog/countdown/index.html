@@ -1,0 +1,8 @@
+<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;height:100%;background:transparent;overflow:hidden;font-family:-apple-system,"SF Pro Rounded",system-ui;color:#fff;-webkit-user-select:none;cursor:default}
+.card{box-sizing:border-box;width:100%;height:100%;border-radius:22px;background:rgba(18,18,22,.42);border:1px solid rgba(255,255,255,.14);display:flex;flex-direction:column;align-items:center;justify-content:center;text-shadow:0 1px 3px rgba(0,0,0,.4)}
+.n{display:flex;gap:18px}.u{text-align:center}.v{font-size:34px;font-weight:300;font-variant-numeric:tabular-nums}.k{font-size:11px;opacity:.7;text-transform:uppercase;letter-spacing:.08em}.title{font-size:12px;opacity:.75;margin-bottom:6px;letter-spacing:.06em;text-transform:uppercase}</style></head>
+<body><div class="card"><div class="title" id="title"></div><div class="n"><div class="u"><div class="v" id="d">0</div><div class="k">days</div></div><div class="u"><div class="v" id="h">0</div><div class="k">hours</div></div><div class="u"><div class="v" id="m">0</div><div class="k">min</div></div></div></div><script>
+function render(){const now=new Date(),target=new Date(now.getFullYear()+1,0,1);let s=Math.max(0,(target-now)/1000);
+document.getElementById('title').textContent='Until '+target.getFullYear();
+document.getElementById('d').textContent=Math.floor(s/86400);document.getElementById('h').textContent=Math.floor(s%86400/3600);document.getElementById('m').textContent=Math.floor(s%3600/60);}
+render();setInterval(render,20000);</script></body></html>

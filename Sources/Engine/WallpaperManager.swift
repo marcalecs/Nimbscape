@@ -144,6 +144,8 @@ public class WallpaperManager: ObservableObject, PowerMonitorDelegate {
     }
 
     private func handleActiveSpaceChange() {
+        // Widgets are re-checked at once (cheap, no playback change), not after the swipe settles.
+        OverlayController.shared.ensureWidgetWindowsVisible()
         spaceRecoveryWorkItem?.cancel()
         let work = DispatchWorkItem { [weak self] in
             Task { @MainActor [weak self] in
@@ -167,6 +169,7 @@ public class WallpaperManager: ObservableObject, PowerMonitorDelegate {
         }
         let screensByID = Dictionary(uniqueKeysWithValues: NSScreen.screens.map { ($0.stableDisplayID, $0) })
         var anyReattached = false
+        defer { OverlayController.shared.ensureWidgetWindowsVisible() }
         for id in orderedDisplayIDs {
             if let screen = screensByID[id] {
                 slotsByDisplayID[id]?.screen = screen
@@ -203,6 +206,7 @@ public class WallpaperManager: ObservableObject, PowerMonitorDelegate {
         isWallpapersHidden.toggle()
         ensureAllWindowsVisible()
         updatePlaybackAndAudioState()
+        OverlayController.shared.setWidgetsHidden(isWallpapersHidden)
     }
 
     private func setupAudioAndMouseBridges() {
@@ -631,9 +635,32 @@ public class WallpaperManager: ObservableObject, PowerMonitorDelegate {
             }
         }
 
+        installOverlays()
         updatePlaybackAndAudioState()
         ensureAllWindowsVisible()
         syncAllDisplaysToLockScreen()
+    }
+
+    /// Widgets and effects for each display's wallpaper, layered above the wallpaper content.
+    private func installOverlays() {
+        for id in orderedDisplayIDs {
+            guard let slot = slotsByDisplayID[id], let contentView = slot.window.contentView,
+                  let wallpaperID = slot.wallpaperID else { continue }
+            OverlayController.shared.install(in: contentView, wallpaperID: wallpaperID, displayID: id, screen: slot.screen)
+        }
+        OverlayController.shared.setWidgetsHidden(isWallpapersHidden)
+    }
+
+    /// Re-applies pause state to overlay effects (e.g. after the widget editor closes).
+    public func refreshOverlayPauseState() {
+        for id in orderedDisplayIDs {
+            OverlayController.shared.setPaused(isSlotPaused(id), displayID: id)
+        }
+    }
+
+    /// The wallpaper currently shown on a display (used by the widget editor).
+    public func currentWallpaperID(forDisplay displayID: String) -> String? {
+        slotsByDisplayID[displayID]?.wallpaperID ?? WallpaperStore.shared.activeWallpaperId
     }
 
     private func loadPerDisplayMode(globalFPS: Int) {
@@ -916,6 +943,7 @@ public class WallpaperManager: ObservableObject, PowerMonitorDelegate {
 
         for id in orderedDisplayIDs {
             guard let slot = slotsByDisplayID[id] else { continue }
+            OverlayController.shared.setPaused(isSlotPaused(id), displayID: id)
             if isSlotPaused(id) {
                 slot.videoView?.pause()
                 slot.webView?.pause()

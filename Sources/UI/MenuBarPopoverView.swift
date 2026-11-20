@@ -218,6 +218,14 @@ public struct MenuBarPopoverView: View {
                 .buttonStyle(.bordered)
                 .controlSize(.small)
 
+                Button(action: { OverlayController.shared.beginEditing() }) {
+                    Image(systemName: "slider.horizontal.below.square.and.square.filled")
+                        .font(.system(size: 11))
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .help("Customize Wallpaper: widgets & effects")
+
                 Button(action: onOpenQuickSwitcher) {
                     Text("⌘⇧W")
                         .font(.system(size: 11, weight: .medium, design: .monospaced))

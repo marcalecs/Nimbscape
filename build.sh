@@ -47,6 +47,7 @@ swiftc -O -swift-version 6 \
     -framework ServiceManagement \
     -framework ImageIO \
     -framework CoreMedia \
+    -framework EventKit \
     Sources/Models/*.swift \
     Sources/App/*.swift \
     Sources/Engine/*.swift \
@@ -61,6 +62,7 @@ if [ -f "Resources/AppIcon.icns" ]; then
     cp Resources/AppIcon.icns "${APP_BUNDLE}/Contents/Resources/AppIcon.icns"
 fi
 cp -R Presets/* "${APP_BUNDLE}/Contents/Resources/Presets/"
+cp -R Resources/WidgetCatalog "${APP_BUNDLE}/Contents/Resources/WidgetCatalog"
 
 xattr -cr "${APP_BUNDLE}" 2>/dev/null || true
 codesign --force --deep --sign - "${APP_BUNDLE}"
