@@ -24,8 +24,15 @@ public struct PowerPolicyState: Equatable, Sendable {
     )
 }
 
+/// A display as the background window scan sees it (NSScreen is main-thread only).
+private struct ScreenSnapshot: Sendable {
+    let id: String
+    let frame: CGRect
+    let visibleFrame: CGRect
+}
+
 /// Windows found on each display by the occlusion scan, keyed by `NSScreen.stableDisplayID`.
-private struct WindowScan {
+private struct WindowScan: Sendable {
     var fullscreenBundleIDs = Set<String>()
     var fullscreenDisplays = Set<String>()
     var maximizedDisplays = Set<String>()
@@ -279,8 +286,7 @@ public class PowerMonitor: ObservableObject {
         deferredEvaluation?.cancel()
         let work = DispatchWorkItem { [weak self] in
             Task { @MainActor [weak self] in
-                self?.evaluateState()
-                self?.delegate?.powerMonitorDidSettleAfterSpaceChange()
+                self?.evaluateState { [weak self] in self?.delegate?.powerMonitorDidSettleAfterSpaceChange() }
             }
         }
         deferredEvaluation = work
@@ -322,8 +328,9 @@ public class PowerMonitor: ObservableObject {
         if self.isLowPowerMode != lowPower { self.isLowPowerMode = lowPower }
     }
 
-    private func inspectOnScreenWindows() -> WindowScan {
-        let ownBundleID = Bundle.main.bundleIdentifier
+    /// Runs on a background queue: CGWindowList and the running-app list are safe off the main
+    /// thread, and the scan (10–20 ms) would otherwise stall the UI every few seconds.
+    private nonisolated static func inspectOnScreenWindows(screens: [ScreenSnapshot], primaryHeight: CGFloat, ownBundleID: String?) -> WindowScan {
         let ignoredSystemBundles: Set<String> = [
             "com.apple.dock",
             "com.apple.WindowManager",
@@ -348,7 +355,6 @@ public class PowerMonitor: ObservableObject {
             }
         }
 
-        let screens = NSScreen.screens
         var scan = WindowScan()
 
         guard let windowList = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else {
@@ -382,8 +388,8 @@ public class PowerMonitor: ObservableObject {
             }
 
             let ownerName = (info[kCGWindowOwnerName as String] as? String) ?? bundleID
-            guard let screen = Self.screen(containing: bounds, in: screens) else { continue }
-            let displayID = screen.stableDisplayID
+            guard let screen = Self.screen(containing: bounds, in: screens, primaryHeight: primaryHeight) else { continue }
+            let displayID = screen.id
             var windowIsMaximized = false
 
             if abs(bounds.width - screen.frame.width) <= 6 && abs(bounds.height - screen.frame.height) <= 6 {
@@ -393,7 +399,7 @@ public class PowerMonitor: ObservableObject {
             }
 
             let visibleArea = max(1, screen.visibleFrame.width * screen.visibleFrame.height)
-            let coveredArea = Self.cgRect(of: screen).intersection(bounds)
+            let coveredArea = Self.cgRect(of: screen, primaryHeight: primaryHeight).intersection(bounds)
             if !coveredArea.isNull, (coveredArea.width * coveredArea.height) / visibleArea >= 0.75 {
                 scan.maximizedDisplays.insert(displayID)
                 windowIsMaximized = true
@@ -411,9 +417,8 @@ public class PowerMonitor: ObservableObject {
     }
 
     /// Screen frame in CoreGraphics window coordinates (origin top-left of the primary display).
-    private static func cgRect(of screen: NSScreen) -> CGRect {
-        let primaryHeight = NSScreen.screens.first?.frame.height ?? screen.frame.height
-        return CGRect(
+    private nonisolated static func cgRect(of screen: ScreenSnapshot, primaryHeight: CGFloat) -> CGRect {
+        CGRect(
             x: screen.frame.minX,
             y: primaryHeight - screen.frame.maxY,
             width: screen.frame.width,
@@ -422,10 +427,10 @@ public class PowerMonitor: ObservableObject {
     }
 
     /// The screen a window (in CG coordinates) mostly sits on.
-    private static func screen(containing windowBounds: CGRect, in screens: [NSScreen]) -> NSScreen? {
-        var best: (screen: NSScreen, area: CGFloat)?
+    private nonisolated static func screen(containing windowBounds: CGRect, in screens: [ScreenSnapshot], primaryHeight: CGFloat) -> ScreenSnapshot? {
+        var best: (screen: ScreenSnapshot, area: CGFloat)?
         for screen in screens {
-            let overlap = cgRect(of: screen).intersection(windowBounds)
+            let overlap = cgRect(of: screen, primaryHeight: primaryHeight).intersection(windowBounds)
             guard !overlap.isNull else { continue }
             let area = overlap.width * overlap.height
             if area > (best?.area ?? 0) { best = (screen, area) }
@@ -434,7 +439,6 @@ public class PowerMonitor: ObservableObject {
     }
 
     public func evaluateState() {
-        let preferences = AppPreferences.shared
 
         if isSystemSleeping || isScreenSleeping || isScreenLocked {
             let reason = isScreenLocked ? "Screen Locked" : (isSystemSleeping ? "System Sleep" : "Display Sleep")
@@ -451,9 +455,47 @@ public class PowerMonitor: ObservableObject {
             return
         }
 
-        let frontmostBundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
-        let runningBundleIDs = Set(NSWorkspace.shared.runningApplications.compactMap { $0.bundleIdentifier })
-        let windowScan = inspectOnScreenWindows()
+        // Snapshot main-thread state, scan windows in the background, finish back on main.
+        let screens = NSScreen.screens.map { ScreenSnapshot(id: $0.stableDisplayID, frame: $0.frame, visibleFrame: $0.visibleFrame) }
+        let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
+        let ownBundleID = Bundle.main.bundleIdentifier
+        scanGeneration += 1
+        let generation = scanGeneration
+        Self.scanQueue.async {
+            let scan = Self.inspectOnScreenWindows(screens: screens, primaryHeight: primaryHeight, ownBundleID: ownBundleID)
+            let running = Set(NSWorkspace.shared.runningApplications.compactMap { $0.bundleIdentifier })
+            let frontmost = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    // A newer evaluation superseded this one (or the machine went to sleep/lock).
+                    guard generation == self.scanGeneration,
+                          !(self.isSystemSleeping || self.isScreenSleeping || self.isScreenLocked) else { return }
+                    self.finishEvaluation(windowScan: scan, frontmostBundleID: frontmost, runningBundleIDs: running)
+                    let callbacks = self.pendingEvaluationCallbacks
+                    self.pendingEvaluationCallbacks.removeAll()
+                    callbacks.forEach { $0() }
+                }
+            }
+        }
+    }
+
+    private static let scanQueue = DispatchQueue(label: "nimbscape.window-scan", qos: .userInitiated)
+    private var scanGeneration = 0
+    private var pendingEvaluationCallbacks: [@MainActor () -> Void] = []
+
+    /// Evaluates, then runs `completion` once the (background) window scan has been applied.
+    public func evaluateState(then completion: @escaping @MainActor () -> Void) {
+        pendingEvaluationCallbacks.append(completion)
+        evaluateState()
+        if isSystemSleeping || isScreenSleeping || isScreenLocked {
+            let callbacks = pendingEvaluationCallbacks
+            pendingEvaluationCallbacks.removeAll()
+            callbacks.forEach { $0() }
+        }
+    }
+
+    private func finishEvaluation(windowScan: WindowScan, frontmostBundleID: String?, runningBundleIDs: Set<String>) {
+        let preferences = AppPreferences.shared
 
         let ruleEval = AppRulesStore.shared.evaluate(
             frontmostBundleID: frontmostBundleID,

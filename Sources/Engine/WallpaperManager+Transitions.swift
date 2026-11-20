@@ -18,14 +18,27 @@ extension WallpaperManager {
 
     public func powerMonitorDidSettleAfterSpaceChange() {
         guard isResumedByVisibility else { return }
-        isResumedByVisibility = false
-        // Policy unchanged (still covered): the user landed on a covered desktop, so ease back down.
-        if effectiveIsPaused {
-            triggerFadeStop()
-        } else {
+        guard currentPolicy.shouldPause && currentPolicy.isWindowCoverPause else {
+            isResumedByVisibility = false
             updatePlaybackAndAudioState()
+            return
+        }
+        // Right after a swipe the window list often still shows the fullscreen app we just left,
+        // which would stop the video and restart it a moment later. Keep playing and confirm
+        // with a fresh scan before easing down.
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.coverRecheckDelay) { [weak self] in
+            MainActor.assumeIsolated {
+                PowerMonitor.shared.evaluateState { [weak self] in
+                    guard let self, self.isResumedByVisibility else { return }
+                    self.isResumedByVisibility = false
+                    if self.effectiveIsPaused { self.triggerFadeStop() } else { self.updatePlaybackAndAudioState() }
+                }
+            }
         }
     }
+
+    /// Delay before re-checking a cover pause right after a swipe.
+    static let coverRecheckDelay: TimeInterval = 0.5
 
     // MARK: - Still-frame cross-fade (smooth stop / start)
 
